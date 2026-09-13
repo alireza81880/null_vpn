@@ -1,0 +1,758 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Vazirmatn:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+/* ==========================================================================
+   Typography & Directional Font Adaptation
+   ========================================================================== */
+
+:root {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-persian: 'Vazirmatn', -apple-system, BlinkMacSystemFont, Tahoma, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* ========================================================================
+     2026 Dark Cyber-Luxe & 60-30-10 Color Science
+     60% Base: Deep Graphite/Smoke #0A0C10 (Prevents halation)
+     30% Surface/Cards: Dark Glass #161A22 with Adaptive Transparency & Blur
+     10% Accents: Electric Blue #3B82F6 & Cyber Purple #8B5CF6
+     ======================================================================== */
+  --bg-canvas: #0A0C10;
+  --bg-canvas-gradient: radial-gradient(ellipse at 50% -10%, #151c28 0%, #0A0C10 75%);
+  --bg-surface: #161A22;
+  --bg-surface-glass: rgba(22, 26, 34, 0.75);
+  --bg-surface-elevated: #1F2533;
+  --bg-surface-hover: rgba(31, 37, 51, 0.85);
+  --bg-input: rgba(16, 20, 28, 0.8);
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-glass: rgba(255, 255, 255, 0.12);
+  --border-luminous: rgba(255, 255, 255, 0.11);
+  --border-accent: rgba(59, 130, 246, 0.5);
+
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
+  --text-inverse: #0A0C10;
+
+  --accent-primary: #3B82F6;
+  --accent-primary-hover: #2563EB;
+  --accent-secondary: #8B5CF6;
+  --accent-secondary-hover: #7C3AED;
+  --accent-glow: rgba(59, 130, 246, 0.45);
+  --accent-purple-glow: rgba(139, 92, 246, 0.45);
+  --accent-foreground: #FFFFFF;
+
+  --status-connected: #10B981;
+  --status-connected-glow: rgba(16, 185, 129, 0.4);
+  --status-disconnected: #64748B;
+  --status-connecting: #F59E0B;
+  --status-connecting-glow: rgba(245, 158, 11, 0.4);
+  --status-error: #EF4444;
+
+  --glass-blur: 24px;
+  --glass-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.5);
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+  --radius-full: 9999px;
+
+  --titlebar-height: 42px;
+}
+
+/* RTL Typography & Directional Layout Rules */
+[dir="rtl"],
+[dir="rtl"] body {
+  font-family: var(--font-persian);
+  letter-spacing: 0;
+}
+
+[dir="ltr"],
+[dir="ltr"] body {
+  font-family: var(--font-sans);
+}
+
+/* ==========================================================================
+   THE 12 COMPLETE THEMES ENGINE (Vision 2026 Color Science)
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   LIGHT MINIMALIST THEMES (4)
+   -------------------------------------------------------------------------- */
+
+/* 1. Light: Clean Minimal */
+[data-theme="clean-minimal"] {
+  --bg-canvas: #f8fafc;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #edf2f7 0%, #f8fafc 85%);
+  --bg-surface: #ffffff;
+  --bg-surface-glass: rgba(255, 255, 255, 0.82);
+  --bg-surface-elevated: #f1f5f9;
+  --bg-surface-hover: rgba(241, 245, 249, 0.95);
+  --bg-input: rgba(241, 245, 249, 0.85);
+
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-strong: rgba(15, 23, 42, 0.16);
+  --border-glass: rgba(255, 255, 255, 0.85);
+  --border-accent: rgba(79, 70, 229, 0.4);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
+  --text-inverse: #ffffff;
+
+  --accent-primary: #4f46e5;
+  --accent-primary-hover: #4338ca;
+  --accent-glow: rgba(79, 70, 229, 0.28);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #059669;
+  --status-connected-glow: rgba(5, 150, 105, 0.25);
+  --status-disconnected: #94a3b8;
+  --status-connecting: #d97706;
+  --status-connecting-glow: rgba(217, 119, 6, 0.25);
+  --status-error: #dc2626;
+
+  --glass-shadow: 0 14px 34px -6px rgba(15, 23, 42, 0.08);
+}
+
+/* 2. Light: Soft Blue */
+[data-theme="soft-blue"] {
+  --bg-canvas: #f0f7ff;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #dbeafe 0%, #f0f7ff 85%);
+  --bg-surface: #ffffff;
+  --bg-surface-glass: rgba(255, 255, 255, 0.85);
+  --bg-surface-elevated: #e0f2fe;
+  --bg-surface-hover: rgba(224, 242, 254, 0.9);
+  --bg-input: rgba(240, 249, 255, 0.9);
+
+  --border-subtle: rgba(2, 132, 199, 0.12);
+  --border-strong: rgba(2, 132, 199, 0.24);
+  --border-glass: rgba(255, 255, 255, 0.9);
+  --border-accent: rgba(2, 132, 199, 0.45);
+
+  --text-primary: #0c4a6e;
+  --text-secondary: #0369a1;
+  --text-muted: #38bdf8;
+  --text-inverse: #ffffff;
+
+  --accent-primary: #0284c7;
+  --accent-primary-hover: #0369a1;
+  --accent-glow: rgba(2, 132, 199, 0.3);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #059669;
+  --status-connected-glow: rgba(5, 150, 105, 0.25);
+  --status-disconnected: #94a3b8;
+  --status-connecting: #d97706;
+  --status-connecting-glow: rgba(217, 119, 6, 0.25);
+  --status-error: #e11d48;
+
+  --glass-shadow: 0 14px 32px -4px rgba(2, 132, 199, 0.1);
+}
+
+/* 3. Light: Pearl */
+[data-theme="pearl"] {
+  --bg-canvas: #faf8f5;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #f5efe6 0%, #faf8f5 85%);
+  --bg-surface: #ffffff;
+  --bg-surface-glass: rgba(255, 255, 255, 0.88);
+  --bg-surface-elevated: #f4ece1;
+  --bg-surface-hover: rgba(244, 236, 225, 0.95);
+  --bg-input: rgba(249, 245, 240, 0.9);
+
+  --border-subtle: rgba(120, 113, 108, 0.12);
+  --border-strong: rgba(120, 113, 108, 0.24);
+  --border-glass: rgba(255, 255, 255, 0.95);
+  --border-accent: rgba(180, 83, 9, 0.4);
+
+  --text-primary: #292524;
+  --text-secondary: #57534e;
+  --text-muted: #a8a29e;
+  --text-inverse: #ffffff;
+
+  --accent-primary: #b45309;
+  --accent-primary-hover: #92400e;
+  --accent-glow: rgba(180, 83, 9, 0.28);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #15803d;
+  --status-connected-glow: rgba(21, 128, 61, 0.25);
+  --status-disconnected: #a8a29e;
+  --status-connecting: #d97706;
+  --status-connecting-glow: rgba(217, 119, 6, 0.25);
+  --status-error: #b91c1c;
+
+  --glass-shadow: 0 14px 34px -4px rgba(120, 113, 108, 0.08);
+}
+
+/* 4. Light: Morning Glow */
+[data-theme="morning"] {
+  --bg-canvas: #fffdf5;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #fef3c7 0%, #fffdf5 85%);
+  --bg-surface: #ffffff;
+  --bg-surface-glass: rgba(255, 255, 255, 0.88);
+  --bg-surface-elevated: #fef3c7;
+  --bg-surface-hover: rgba(254, 243, 199, 0.9);
+  --bg-input: rgba(254, 249, 231, 0.9);
+
+  --border-subtle: rgba(217, 119, 6, 0.12);
+  --border-strong: rgba(217, 119, 6, 0.24);
+  --border-glass: rgba(255, 255, 255, 0.9);
+  --border-accent: rgba(245, 158, 11, 0.45);
+
+  --text-primary: #451a03;
+  --text-secondary: #78350f;
+  --text-muted: #b45309;
+  --text-inverse: #ffffff;
+
+  --accent-primary: #f59e0b;
+  --accent-primary-hover: #d97706;
+  --accent-glow: rgba(245, 158, 11, 0.32);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #059669;
+  --status-connected-glow: rgba(5, 150, 105, 0.25);
+  --status-disconnected: #9ca3af;
+  --status-connecting: #d97706;
+  --status-connecting-glow: rgba(217, 119, 6, 0.25);
+  --status-error: #dc2626;
+
+  --glass-shadow: 0 12px 32px -4px rgba(245, 158, 11, 0.12);
+}
+
+/* --------------------------------------------------------------------------
+   DARK & MONOCHROMATIC THEMES (4)
+   -------------------------------------------------------------------------- */
+
+/* 5. Dark: Deep Space */
+[data-theme="deep-space"] {
+  --bg-canvas: #090d16;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #111a2e 0%, #090d16 85%);
+  --bg-surface: #0e1626;
+  --bg-surface-glass: rgba(14, 22, 38, 0.65);
+  --bg-surface-elevated: #162238;
+  --bg-surface-hover: rgba(26, 38, 62, 0.85);
+  --bg-input: rgba(10, 16, 28, 0.7);
+
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-glass: rgba(255, 255, 255, 0.12);
+  --border-accent: rgba(99, 102, 241, 0.45);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #090d16;
+
+  --accent-primary: #6366f1;
+  --accent-primary-hover: #4f46e5;
+  --accent-glow: rgba(99, 102, 241, 0.4);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #10b981;
+  --status-connected-glow: rgba(16, 185, 129, 0.35);
+  --status-disconnected: #64748b;
+  --status-connecting: #f59e0b;
+  --status-connecting-glow: rgba(245, 158, 11, 0.35);
+  --status-error: #ef4444;
+
+  --glass-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* 6. Dark: Slate */
+[data-theme="slate"] {
+  --bg-canvas: #0f172a;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #1e293b 0%, #0f172a 85%);
+  --bg-surface: #1e293b;
+  --bg-surface-glass: rgba(30, 41, 59, 0.7);
+  --bg-surface-elevated: #334155;
+  --bg-surface-hover: rgba(51, 65, 85, 0.85);
+  --bg-input: rgba(15, 23, 42, 0.7);
+
+  --border-subtle: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-glass: rgba(255, 255, 255, 0.14);
+  --border-accent: rgba(14, 165, 233, 0.45);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-inverse: #0f172a;
+
+  --accent-primary: #0ea5e9;
+  --accent-primary-hover: #0284c7;
+  --accent-glow: rgba(14, 165, 233, 0.4);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #10b981;
+  --status-connected-glow: rgba(16, 185, 129, 0.35);
+  --status-disconnected: #64748b;
+  --status-connecting: #f59e0b;
+  --status-connecting-glow: rgba(245, 158, 11, 0.35);
+  --status-error: #ef4444;
+
+  --glass-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.45);
+}
+
+/* 7. Dark: OLED Pure Black (Linear / Vercel Stark Monochromatic) */
+[data-theme="oled-black"] {
+  --bg-canvas: #000000;
+  --bg-canvas-gradient: none;
+  --bg-surface: #0a0a0a;
+  --bg-surface-glass: rgba(10, 10, 10, 0.8);
+  --bg-surface-elevated: #141414;
+  --bg-surface-hover: rgba(24, 24, 24, 0.95);
+  --bg-input: rgba(14, 14, 14, 0.9);
+
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.24);
+  --border-glass: rgba(255, 255, 255, 0.16);
+  --border-accent: rgba(255, 255, 255, 0.6);
+
+  --text-primary: #ffffff;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --text-inverse: #000000;
+
+  --accent-primary: #ffffff;
+  --accent-primary-hover: #e4e4e7;
+  --accent-glow: rgba(255, 255, 255, 0.35);
+  --accent-foreground: #000000;
+
+  --status-connected: #22c55e;
+  --status-connected-glow: rgba(34, 197, 94, 0.45);
+  --status-disconnected: #52525b;
+  --status-connecting: #eab308;
+  --status-connecting-glow: rgba(234, 179, 8, 0.4);
+  --status-error: #f43f5e;
+
+  --glass-shadow: 0 18px 45px 0 rgba(0, 0, 0, 0.95);
+}
+
+/* 8. Dark: Midnight Indigo */
+[data-theme="midnight"] {
+  --bg-canvas: #020617;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #0f172a 0%, #020617 85%);
+  --bg-surface: #090e24;
+  --bg-surface-glass: rgba(9, 14, 36, 0.72);
+  --bg-surface-elevated: #131b3e;
+  --bg-surface-hover: rgba(19, 27, 62, 0.9);
+  --bg-input: rgba(6, 10, 26, 0.8);
+
+  --border-subtle: rgba(129, 140, 248, 0.12);
+  --border-strong: rgba(129, 140, 248, 0.24);
+  --border-glass: rgba(129, 140, 248, 0.16);
+  --border-accent: rgba(129, 140, 248, 0.5);
+
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #818cf8;
+  --text-inverse: #020617;
+
+  --accent-primary: #818cf8;
+  --accent-primary-hover: #6366f1;
+  --accent-glow: rgba(129, 140, 248, 0.4);
+  --accent-foreground: #020617;
+
+  --status-connected: #34d399;
+  --status-connected-glow: rgba(52, 211, 153, 0.35);
+  --status-disconnected: #475569;
+  --status-connecting: #fbbf24;
+  --status-connecting-glow: rgba(251, 191, 36, 0.35);
+  --status-error: #f43f5e;
+
+  --glass-shadow: 0 16px 44px 0 rgba(2, 6, 23, 0.75);
+}
+
+/* --------------------------------------------------------------------------
+   PREMIUM HIGH-CONTRAST THEMES (4) - Vision 2026 Color Science
+   -------------------------------------------------------------------------- */
+
+/* 9. Premium: Cyberpunk Neon (Canvas #09090b, Surface #18181b, Primary Glow #ff003c, Secondary #00f0ff) */
+[data-theme="cyberpunk-neon"] {
+  --bg-canvas: #09090b;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #1a0814 0%, #09090b 85%);
+  --bg-surface: #18181b;
+  --bg-surface-glass: rgba(24, 24, 27, 0.75);
+  --bg-surface-elevated: #27272a;
+  --bg-surface-hover: rgba(39, 39, 42, 0.9);
+  --bg-input: rgba(12, 12, 14, 0.85);
+
+  --border-subtle: rgba(255, 0, 60, 0.22);
+  --border-strong: rgba(0, 240, 255, 0.35);
+  --border-glass: rgba(255, 0, 60, 0.28);
+  --border-accent: rgba(0, 240, 255, 0.65);
+
+  --text-primary: #ffffff;
+  --text-secondary: #e4e4e7;
+  --text-muted: #ff003c;
+  --text-inverse: #09090b;
+
+  --accent-primary: #ff003c;
+  --accent-primary-hover: #e60036;
+  --accent-glow: rgba(255, 0, 60, 0.55);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #00f0ff;
+  --status-connected-glow: rgba(0, 240, 255, 0.55);
+  --status-disconnected: #71717a;
+  --status-connecting: #ffe600;
+  --status-connecting-glow: rgba(255, 230, 0, 0.5);
+  --status-error: #ff003c;
+
+  --glass-shadow: 0 18px 48px 0 rgba(255, 0, 60, 0.25);
+}
+
+/* 10. Premium: Aurora Borealis (Dark Greens #022c22, Neon Mint #6ee7b7, Gradient Purple #c084fc) */
+[data-theme="aurora-borealis"] {
+  --bg-canvas: #022c22;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #064e3b 0%, #022c22 85%);
+  --bg-surface: #033a2e;
+  --bg-surface-glass: rgba(3, 58, 46, 0.7);
+  --bg-surface-elevated: #065f46;
+  --bg-surface-hover: rgba(6, 95, 70, 0.85);
+  --bg-input: rgba(2, 38, 30, 0.8);
+
+  --border-subtle: rgba(110, 231, 183, 0.2);
+  --border-strong: rgba(192, 132, 252, 0.35);
+  --border-glass: rgba(110, 231, 183, 0.25);
+  --border-accent: rgba(192, 132, 252, 0.6);
+
+  --text-primary: #f0fdfa;
+  --text-secondary: #a7f3d0;
+  --text-muted: #6ee7b7;
+  --text-inverse: #022c22;
+
+  --accent-primary: #6ee7b7;
+  --accent-primary-hover: #34d399;
+  --accent-glow: rgba(110, 231, 183, 0.5);
+  --accent-foreground: #022c22;
+
+  --status-connected: #6ee7b7;
+  --status-connected-glow: rgba(110, 231, 183, 0.55);
+  --status-disconnected: #064e3b;
+  --status-connecting: #c084fc;
+  --status-connecting-glow: rgba(192, 132, 252, 0.55);
+  --status-error: #f43f5e;
+
+  --glass-shadow: 0 18px 45px 0 rgba(110, 231, 183, 0.2);
+}
+
+/* 11. Premium: Sunset Gradient */
+[data-theme="sunset-gradient"] {
+  --bg-canvas: #120914;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #2e1026 0%, #120914 85%);
+  --bg-surface: #1e0e22;
+  --bg-surface-glass: rgba(30, 14, 34, 0.75);
+  --bg-surface-elevated: #36173d;
+  --bg-surface-hover: rgba(54, 23, 61, 0.9);
+  --bg-input: rgba(18, 9, 20, 0.8);
+
+  --border-subtle: rgba(251, 146, 60, 0.18);
+  --border-strong: rgba(244, 63, 94, 0.32);
+  --border-glass: rgba(251, 146, 60, 0.24);
+  --border-accent: rgba(249, 115, 22, 0.55);
+
+  --text-primary: #fff7ed;
+  --text-secondary: #fed7aa;
+  --text-muted: #f97316;
+  --text-inverse: #120914;
+
+  --accent-primary: #f97316;
+  --accent-primary-hover: #ea580c;
+  --accent-glow: rgba(249, 115, 22, 0.45);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #f43f5e;
+  --status-connected-glow: rgba(244, 63, 94, 0.45);
+  --status-disconnected: #50132b;
+  --status-connecting: #fbbf24;
+  --status-connecting-glow: rgba(251, 191, 36, 0.4);
+  --status-error: #dc2626;
+
+  --glass-shadow: 0 18px 45px 0 rgba(249, 115, 22, 0.2);
+}
+
+/* 12. Premium: Hacker Green */
+[data-theme="hacker-green"] {
+  --bg-canvas: #030a04;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 0%, #061a08 0%, #030a04 85%);
+  --bg-surface: #07170a;
+  --bg-surface-glass: rgba(7, 23, 10, 0.75);
+  --bg-surface-elevated: #0f2d14;
+  --bg-surface-hover: rgba(15, 45, 20, 0.9);
+  --bg-input: rgba(4, 14, 5, 0.8);
+
+  --border-subtle: rgba(34, 197, 94, 0.2);
+  --border-strong: rgba(34, 197, 94, 0.35);
+  --border-glass: rgba(34, 197, 94, 0.25);
+  --border-accent: rgba(34, 197, 94, 0.65);
+
+  --text-primary: #f0fdf4;
+  --text-secondary: #86efac;
+  --text-muted: #22c55e;
+  --text-inverse: #030a04;
+
+  --accent-primary: #22c55e;
+  --accent-primary-hover: #16a34a;
+  --accent-glow: rgba(34, 197, 94, 0.5);
+  --accent-foreground: #030a04;
+
+  --status-connected: #22c55e;
+  --status-connected-glow: rgba(34, 197, 94, 0.55);
+  --status-disconnected: #14532d;
+  --status-connecting: #eab308;
+  --status-connecting-glow: rgba(234, 179, 8, 0.45);
+  --status-error: #ef4444;
+
+  --glass-shadow: 0 18px 48px 0 rgba(34, 197, 94, 0.25);
+}
+
+/* ==========================================================================
+   Base Elements Setup & Custom Scrollbar
+   ========================================================================== */
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+  user-select: none;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-strong);
+}
+
+/* ==========================================================================
+   Apple visionOS & Linear Ultra-Thin Glassmorphism Utilities
+   Hardware Accelerated: Forced GPU Compositing via translateZ(0) & will-change
+   ========================================================================== */
+
+.glass-panel {
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--border-glass);
+  box-shadow: var(--glass-shadow);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.glass-panel-elevated {
+  background: var(--bg-surface-elevated);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.3)) saturate(190%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.3)) saturate(190%);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--glass-shadow);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+.glass-nav {
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border-color: var(--border-glass);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+.glass-card {
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.2);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.glass-card:hover {
+  border-color: var(--border-accent);
+  transform: translateY(-1px) translateZ(0);
+}
+
+.glass-interactive {
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
+  transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-interactive:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-hover);
+}
+
+.window-drag-region {
+  -webkit-app-region: drag;
+}
+
+.window-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* ==========================================================================
+   Liquid Glass 2.0 & Bento Grid Architecture (2026 Standards)
+   Hardware Accelerated: Forced GPU Compositing via translateZ(0) & will-change
+   ========================================================================== */
+
+.liquid-glass {
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(190%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(190%);
+  border: 1px solid var(--border-luminous);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12), 0 8px 32px -6px rgba(0, 0, 0, 0.45);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+.liquid-glass-elevated {
+  background: var(--bg-surface-elevated);
+  backdrop-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(200%);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.25)) saturate(200%);
+  border: 1px solid var(--border-strong);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.15), 0 14px 40px -8px rgba(0, 0, 0, 0.55);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
+.bento-card-root {
+  position: relative;
+  background: var(--bg-surface-glass);
+  backdrop-filter: blur(var(--glass-blur)) saturate(185%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(185%);
+  border: 1px solid var(--border-luminous);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.1), 0 10px 30px -6px rgba(0, 0, 0, 0.4);
+  border-radius: 1.25rem;
+  overflow: hidden;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform, opacity;
+  transition: border-color 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bento-card-root:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.bento-card-interactive:hover {
+  transform: translateY(-2px) translateZ(0);
+}
+
+/* ==========================================================================
+   Zero-Lag Telemetry Number Rendering (60/120fps Protection)
+   Disables layout thrashing and continuous style interpolation on 1Hz updates
+   ========================================================================== */
+.telemetry-ticker,
+.telemetry-value,
+.tabular-nums,
+[data-telemetry-node] {
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  transition: none !important;
+  will-change: contents;
+}
+
+/* Clay Button Micro-Tactility System */
+.clay-tactile {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.2), 0 6px 20px -3px rgba(0, 0, 0, 0.4);
+}
+
+.clay-tactile-primary {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.25), 0 0 24px -4px var(--accent-glow);
+}
+
+.clay-tactile-primary:hover {
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.32), 0 0 32px -2px var(--accent-glow);
+}
+
+.clay-tactile-pressed {
+  box-shadow: inset 0 1px 2px 0 rgba(0, 0, 0, 0.4) !important;
+}
+
+/* 2026 Micro-Radar Pulse Animation */
+@keyframes radar-ping {
+  0% {
+    transform: scale(0.92);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(1.25);
+    opacity: 0;
+  }
+}
+
+.animate-radar-ping {
+  animation: radar-ping 2.5s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Microscopic Spinner for Zero Layout Shift */
+@keyframes micro-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-micro-spin {
+  animation: micro-spin 0.65s linear infinite;
+}

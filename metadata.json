@@ -1,0 +1,6 @@
+{
+  "name": "Null VPN",
+  "description": "Next-generation 2026 Liquid Glass & Bento Grid WireGuard VPN client featuring Dark Cyber-Luxe aesthetics and real-time telemetry.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

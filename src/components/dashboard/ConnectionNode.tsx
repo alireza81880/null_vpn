@@ -1,0 +1,294 @@
+import React, { memo } from 'react';
+import { Laptop, Globe, Lock, ShieldCheck, Zap, Wifi } from 'lucide-react';
+import type { ConnectionState } from '../../types/vpn';
+import { useAppStore } from '../../store/useAppStore';
+
+export interface ConnectionNodeProps {
+  connectionState: ConnectionState;
+  endpoint?: string;
+  clientIp?: string;
+  latencyPing?: number;
+  cipher?: string;
+  tunnelName?: string;
+}
+
+/**
+ * ConnectionNode (Holographic Tunnel Gateway - Fully Theme-Synchronized)
+ * 
+ * - Displays Local Device -> Encrypted WireGuard Tunnel -> Remote Endpoint.
+ * - Uses dynamic CSS variables exclusively for all states.
+ */
+const LatencyBadge: React.FC<{ connectionState: ConnectionState; explicitPing?: number }> = memo(
+  ({ connectionState, explicitPing }) => {
+    const storePing = useAppStore((state) => state.stats.latencyPing);
+    const latencyPing = explicitPing ?? storePing;
+    const isConnected = connectionState === 'connected';
+    const isConnecting = connectionState === 'connecting';
+
+    return (
+      <span
+        style={{
+          transform: 'translateZ(0)',
+          backgroundColor: isConnected
+            ? 'rgba(16, 185, 129, 0.15)'
+            : isConnecting
+            ? 'rgba(245, 158, 11, 0.15)'
+            : 'var(--bg-surface-elevated)',
+          borderColor: isConnected
+            ? 'var(--status-connected)'
+            : isConnecting
+            ? 'var(--status-connecting)'
+            : 'var(--border-subtle)',
+          color: isConnected
+            ? 'var(--status-connected)'
+            : isConnecting
+            ? 'var(--status-connecting)'
+            : 'var(--text-muted)',
+        }}
+        className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full border tabular-nums transition-none"
+      >
+        <Wifi className="w-2.5 h-2.5" />
+        {isConnected ? `${latencyPing} ms` : isConnecting ? 'Syncing...' : 'Offline'}
+      </span>
+    );
+  }
+);
+LatencyBadge.displayName = 'LatencyBadge';
+
+export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
+  connectionState,
+  endpoint = '198.51.100.42:51820',
+  clientIp = '10.14.0.2/32',
+  latencyPing,
+  cipher = 'ChaCha20-Poly1305',
+  tunnelName = 'Frankfurt-Edge-01',
+}) => {
+  const isConnected = connectionState === 'connected';
+  const isConnecting = connectionState === 'connecting';
+  const isAppActive = useAppStore((state) => state.isAppActive);
+
+  return (
+    <div
+      style={{
+        transform: 'translateZ(0)',
+        willChange: 'transform',
+        backfaceVisibility: 'hidden',
+      }}
+      className="w-full py-2 select-none"
+    >
+      {/* Node Flow Track */}
+      <div className="relative flex items-center justify-between gap-2 sm:gap-4 px-2">
+        {/* 1. Client Endpoint Node */}
+        <div className="flex flex-col items-center gap-2 z-10">
+          <div
+            style={{
+              backgroundColor: isConnected
+                ? 'rgba(59, 130, 246, 0.18)'
+                : 'var(--bg-surface-elevated)',
+              borderColor: isConnected
+                ? 'var(--accent-primary)'
+                : 'var(--border-subtle)',
+              color: isConnected
+                ? 'var(--accent-primary)'
+                : 'var(--text-secondary)',
+              boxShadow: isConnected
+                ? '0 0 20px var(--accent-glow)'
+                : 'none',
+            }}
+            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300"
+          >
+            <Laptop className="w-6 h-6" />
+          </div>
+          <div className="text-center">
+            <span
+              style={{ color: 'var(--text-primary)' }}
+              className="text-[11px] font-bold block tracking-tight"
+            >
+              Local Client
+            </span>
+            <span
+              style={{ color: 'var(--text-muted)' }}
+              className="text-[10px] font-mono block truncate max-w-[90px] sm:max-w-[120px]"
+            >
+              {isConnected ? clientIp : '127.0.0.1'}
+            </span>
+          </div>
+        </div>
+
+        {/* 2. Interactive SVG Data Tunnel with Animated Pulse */}
+        <div className="flex-1 relative flex flex-col items-center justify-center px-1 sm:px-3">
+          {/* Cryptographic Badge Above Tunnel */}
+          <div
+            style={{
+              backgroundColor: 'var(--bg-surface-elevated)',
+              borderColor: 'var(--border-subtle)',
+              color: 'var(--text-secondary)',
+            }}
+            className="mb-2 flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono backdrop-blur-md"
+          >
+            <Lock
+              className="w-3 h-3"
+              style={{
+                color: isConnected
+                  ? 'var(--accent-primary)'
+                  : isConnecting
+                  ? 'var(--status-connecting)'
+                  : 'var(--text-muted)',
+              }}
+            />
+            <span className="truncate max-w-[140px] sm:max-w-none">{cipher}</span>
+          </div>
+
+          {/* Heavy SVG Optical Track */}
+          <div className="w-full relative h-6 flex items-center">
+            <svg
+              className="w-full h-full overflow-visible"
+              preserveAspectRatio="none"
+              viewBox="0 0 300 24"
+            >
+              <defs>
+                <linearGradient id="tunnelGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.8" />
+                  <stop offset="50%" stopColor="#8B5CF6" stopOpacity="0.9" />
+                  <stop offset="100%" stopColor="#10B981" stopOpacity="0.8" />
+                </linearGradient>
+
+                <linearGradient id="tunnelGradientInactive" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stopColor="var(--border-subtle)" stopOpacity="0.8" />
+                  <stop offset="100%" stopColor="var(--border-strong)" stopOpacity="0.8" />
+                </linearGradient>
+
+                <filter id="laserGlow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feGaussianBlur stdDeviation="3" result="blur" />
+                  <feComposite in="SourceGraphic" in2="blur" operator="over" />
+                </filter>
+              </defs>
+
+              {/* Base Track */}
+              <line
+                x1="0"
+                y1="12"
+                x2="300"
+                y2="12"
+                stroke={isConnected ? 'url(#tunnelGradient)' : isConnecting ? '#F59E0B' : 'url(#tunnelGradientInactive)'}
+                strokeWidth={isConnected ? '2.5' : '1.5'}
+                strokeDasharray={isConnected ? 'none' : '4 4'}
+                filter={isConnected ? 'url(#laserGlow)' : undefined}
+                className={isConnecting ? 'animate-pulse' : ''}
+              />
+
+              {/* Animated Laser Packets when Connected & App Active (Battery Preserved) */}
+              {isConnected && isAppActive && (
+                <>
+                  <circle r="3.5" fill="#60A5FA" filter="url(#laserGlow)">
+                    <animate
+                      attributeName="cx"
+                      from="10"
+                      to="290"
+                      dur="1.6s"
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="cy"
+                      values="12;11;12"
+                      dur="1.6s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                  <circle r="2.5" fill="#A78BFA" filter="url(#laserGlow)">
+                    <animate
+                      attributeName="cx"
+                      from="290"
+                      to="10"
+                      dur="2.2s"
+                      repeatCount="indefinite"
+                    />
+                    <animate
+                      attributeName="cy"
+                      values="12;13;12"
+                      dur="2.2s"
+                      repeatCount="indefinite"
+                    />
+                  </circle>
+                </>
+              )}
+            </svg>
+
+            {/* Central Tunnel Core Icon */}
+            <div
+              style={{
+                backgroundColor: isConnected
+                  ? 'var(--accent-primary)'
+                  : isConnecting
+                  ? 'var(--status-connecting)'
+                  : 'var(--bg-surface-elevated)',
+                borderColor: isConnected
+                  ? 'var(--accent-primary)'
+                  : isConnecting
+                  ? 'var(--status-connecting)'
+                  : 'var(--border-subtle)',
+                color: isConnected || isConnecting ? '#ffffff' : 'var(--text-muted)',
+                boxShadow: isConnected
+                  ? '0 0 18px var(--accent-glow)'
+                  : 'none',
+              }}
+              className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 top-1/2 w-8 h-8 rounded-full flex items-center justify-center border backdrop-blur-xl transition-all duration-300"
+            >
+              {isConnected ? (
+                <Zap className="w-4 h-4" />
+              ) : isConnecting ? (
+                <ShieldCheck className="w-4 h-4" />
+              ) : (
+                <Lock className="w-3.5 h-3.5" />
+              )}
+            </div>
+          </div>
+
+          {/* Real-time Latency Radar / Protocol Label (Isolated from SVG paths) */}
+          <div className="mt-2 flex items-center gap-2">
+            <LatencyBadge connectionState={connectionState} explicitPing={latencyPing} />
+          </div>
+        </div>
+
+        {/* 3. Server Gateway Node */}
+        <div className="flex flex-col items-center gap-2 z-10">
+          <div
+            style={{
+              backgroundColor: isConnected
+                ? 'rgba(139, 92, 246, 0.18)'
+                : 'var(--bg-surface-elevated)',
+              borderColor: isConnected
+                ? 'var(--accent-secondary)'
+                : 'var(--border-subtle)',
+              color: isConnected
+                ? 'var(--accent-secondary)'
+                : 'var(--text-secondary)',
+              boxShadow: isConnected
+                ? '0 0 20px var(--accent-purple-glow)'
+                : 'none',
+            }}
+            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300"
+          >
+            <Globe className="w-6 h-6" />
+          </div>
+          <div className="text-center">
+            <span
+              style={{ color: 'var(--text-primary)' }}
+              className="text-[11px] font-bold block tracking-tight truncate max-w-[90px] sm:max-w-[120px]"
+            >
+              {tunnelName}
+            </span>
+            <span
+              style={{ color: 'var(--text-muted)' }}
+              className="text-[10px] font-mono block truncate max-w-[90px] sm:max-w-[120px]"
+            >
+              {endpoint}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+ConnectionNode.displayName = 'ConnectionNode';
