@@ -69,6 +69,7 @@ jobs:
 
       - name: Initialize & Sync Capacitor Android
         run: |
+          npm install @capacitor/cli --no-save
           npx cap add android || true
           npx cap sync android
 
