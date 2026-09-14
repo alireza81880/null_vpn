@@ -1,15 +1,65 @@
 {
-  "name": "react-example",
-  "private": true,
-  "version": "0.0.0",
+  "name": "null-vpn",
+  "productName": "Null VPN",
+  "version": "1.0.0",
+  "description": "Next-generation 2026 Liquid Glass & Bento Grid WireGuard/sing-box VPN client",
+  "author": "Alireza <alireza818800@gmail.com>",
+  "main": "dist-electron/index.cjs",
   "type": "module",
+  "private": true,
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
+    "build:electron": "esbuild electron/main/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist-electron/index.cjs --external:electron && esbuild electron/preload.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist-electron/preload.cjs --external:electron",
+    "electron:build": "npm run build && npm run build:electron && electron-builder",
+    "electron:start": "npm run build:electron && electron .",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit",
-    "electron:build": "vite build && electron-builder"
+    "clean": "rm -rf dist dist-electron release",
+    "lint": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "com.nullvpn.app",
+    "productName": "Null VPN",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Null VPN"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network"
+    }
   },
   "dependencies": {
     "@capacitor/app": "^8.1.1",
@@ -31,10 +81,11 @@
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
     "electron": "^44.3.0",
-    "electron-builder": "^25.1.8",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
   }
 }

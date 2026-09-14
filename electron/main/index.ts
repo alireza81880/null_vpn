@@ -11,11 +11,38 @@
 
 import { app, BrowserWindow, shell } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { registerVpnIpcHandlers, VpnDaemonManager } from './vpnManager';
 
 let mainWindow: BrowserWindow | null = null;
 
 const isDev = process.env.NODE_ENV !== 'production' && !app.isPackaged;
+
+function resolvePreloadPath(): string {
+  const candidates = [
+    path.join(__dirname, 'preload.cjs'),
+    path.join(__dirname, 'preload.js'),
+    path.join(app.getAppPath(), 'dist-electron', 'preload.cjs'),
+    path.join(app.getAppPath(), 'dist-electron', 'preload.js'),
+    path.join(__dirname, '../preload.js'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return path.join(__dirname, 'preload.cjs');
+}
+
+function resolveHtmlPath(): string {
+  const candidates = [
+    path.join(app.getAppPath(), 'dist', 'index.html'),
+    path.join(__dirname, '../dist', 'index.html'),
+    path.join(process.cwd(), 'dist', 'index.html'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return path.join(app.getAppPath(), 'dist', 'index.html');
+}
 
 async function createWindow(): Promise<BrowserWindow> {
   mainWindow = new BrowserWindow({
@@ -27,7 +54,7 @@ async function createWindow(): Promise<BrowserWindow> {
     titleBarStyle: 'hidden',
     backgroundColor: '#0A0C10',
     webPreferences: {
-      preload: path.join(__dirname, '../preload.js'),
+      preload: resolvePreloadPath(),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false, // Required when preload uses contextBridge and ipcRenderer
@@ -49,7 +76,7 @@ async function createWindow(): Promise<BrowserWindow> {
   if (isDev && process.env.VITE_DEV_SERVER_URL) {
     await mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
-    await mainWindow.loadFile(path.join(process.cwd(), 'dist', 'index.html'));
+    await mainWindow.loadFile(resolveHtmlPath());
   }
 
   mainWindow.on('closed', () => {

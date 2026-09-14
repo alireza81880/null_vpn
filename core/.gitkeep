@@ -1,0 +1,4 @@
+# Place platform-specific sing-box binaries here:
+# Windows: core/sing-box.exe
+# Linux: core/sing-box
+# macOS: core/sing-box
