@@ -1,13 +1,13 @@
 name: Build & Release Null VPN
 
 on:
-  workflow_dispatch: # اجازه اجرای دستی با یک کلیک (بدون نیاز به تگ زدن)
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
 
 permissions:
-  contents: write # ⚠️ این خط برای آپلود فایل دانلودی اجباری است
+  contents: write
 
 jobs:
   build-desktop:
@@ -19,7 +19,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22 # ارتقا به نسخه ۲۲ برای حذف اخطار
+          node-version: 22
 
       - name: Install Dependencies
         run: npm install
@@ -29,9 +29,18 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload Release Asset
+      # استراتژی ۱: ذخیره فایل برای دانلود هنگام اجرای دستی
+      - name: Upload Artifact (For Manual Runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Null-VPN-Windows-Exe
+          path: release/*.exe
+
+      # استراتژی ۲: ارسال به بخش Releases هنگام تگ زدن (نسخه رسمی)
+      - name: Upload Release Asset (For Tag Pushes)
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           files: |
             release/*.exe
