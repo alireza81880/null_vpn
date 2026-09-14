@@ -182,9 +182,9 @@ export const Dashboard: React.FC = () => {
         bodyClassName="p-5 sm:p-7"
       >
         {/* Top Control Bar: Active Tunnel Pill & Status Badge */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6 min-w-0">
           {/* Active Tunnel Switcher Pill */}
-          <div className="relative">
+          <div className="relative min-w-0 max-w-full sm:max-w-md">
             <button
               type="button"
               id="btn-toggle-tunnel-dropdown"
@@ -194,18 +194,19 @@ export const Dashboard: React.FC = () => {
                 borderColor: 'var(--border-glass)',
                 color: 'var(--text-primary)',
               }}
-              className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer"
+              className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer max-w-full min-w-0"
+              title={activeConfig?.name || 'No Profile'}
             >
               <div
                 style={{ backgroundColor: 'var(--accent-primary)' }}
-                className="w-2 h-2 rounded-full animate-pulse"
+                className="w-2 h-2 rounded-full animate-pulse shrink-0"
               />
               <Server
-                className="w-3.5 h-3.5"
+                className="w-3.5 h-3.5 shrink-0"
                 style={{ color: 'var(--accent-primary)' }}
               />
-              <span className="font-mono tracking-tight">{activeConfig?.name || 'No Profile'}</span>
-              <ChevronDown className={`w-3.5 h-3.5 opacity-60 transition-transform ${isTunnelDropdownOpen ? 'rotate-180' : ''}`} />
+              <span className="font-mono tracking-tight truncate max-w-[160px] sm:max-w-xs">{activeConfig?.name || 'No Profile'}</span>
+              <ChevronDown className={`w-3.5 h-3.5 opacity-60 transition-transform shrink-0 ${isTunnelDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {/* Context-Aware Tunnel Dropdown Menu */}

@@ -285,23 +285,8 @@ export const useAppStore = create<AppState>((set, get) => {
           },
         });
       } else if (current === 'disconnected') {
-        // Connect flow
+        // Connect flow: transition state, wait for native or engine telemetry
         set({ connectionState: 'connecting' });
-        setTimeout(() => {
-          set({
-            connectionState: 'connected',
-            stats: {
-              downloadSpeed: 124.5 * 1024 * 1024,
-              uploadSpeed: 42.1 * 1024 * 1024,
-              totalReceived: 142.8 * 1024 * 1024,
-              totalSent: 38.4 * 1024 * 1024,
-              latencyPing: 26,
-              lastHandshake: 2,
-              sessionUptime: '01:42:15',
-              connectedSince: Date.now(),
-            },
-          });
-        }, 1100);
       }
     },
 

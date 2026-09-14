@@ -37,8 +37,8 @@ public class NullVpnService extends VpnService {
     private Handler telemetryHandler = null;
     private Runnable telemetryRunnable = null;
     private int uptimeSeconds = 0;
-    private long totalRx = 10485760L;
-    private long totalTx = 4194304L;
+    private long totalRx = 0L;
+    private long totalTx = 0L;
 
     public interface VpnEventListener {
         void onStateChange(String status, String message);
@@ -146,6 +146,14 @@ public class NullVpnService extends VpnService {
             if (tunInterface == null) {
                 throw new IllegalStateException("VpnService.Builder.establish() returned null");
             }
+
+            int tunFd = tunInterface.getFd();
+            Log.i(TAG, "TUN interface established with file descriptor: " + tunFd);
+
+            // sing-box core integration hook:
+            // When libbox / sing-box AAR is linked, pass the File Descriptor and configuration JSON:
+            // BoxService.start(tunFd, configJson);
+            // Traffic written to the TUN device is then processed and routed by the sing-box core.
 
             currentStatus = "connected";
             uptimeSeconds = 0;

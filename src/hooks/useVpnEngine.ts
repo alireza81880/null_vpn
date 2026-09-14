@@ -122,9 +122,6 @@ export function useVpnEngine() {
   const activeConfigId = useAppStore((state) => state.activeConfigId);
   const configs = useAppStore((state) => state.configs);
 
-  // Fallback web simulation interval ref
-  const webSimTimerRef = useRef<NodeJS.Timeout | null>(null);
-
   // Detect execution runtime
   const platform = useMemo<PlatformTarget>(() => {
     if (Capacitor.isNativePlatform()) {
@@ -256,14 +253,6 @@ export function useVpnEngine() {
     };
   }, [platform, isAppActive, setConnectionState, setEngineError, updateStats, stats.sessionUptime]);
 
-  // Clean up any web simulation timer when connection drops
-  useEffect(() => {
-    if (connectionState !== 'connected' && webSimTimerRef.current) {
-      clearInterval(webSimTimerRef.current);
-      webSimTimerRef.current = null;
-    }
-  }, [connectionState]);
-
   // ==========================================================================
   // UNIFIED CONNECT DISPATCHER
   // ==========================================================================
@@ -336,44 +325,25 @@ export function useVpnEngine() {
         }
       }
 
-      // 3. Web Preview Pathway (Graceful browser simulation)
+      // 3. Web Preview Pathway (Graceful preview state transition without fake throughput)
       return new Promise<boolean>((resolve) => {
         setTimeout(() => {
           setConnectionState('connected');
           const startTimestamp = Date.now();
-          let secCount = 0;
 
           updateStats({
-            downloadSpeed: 118.5 * 1024 * 1024,
-            uploadSpeed: 38.2 * 1024 * 1024,
-            totalReceived: 85.4 * 1024 * 1024,
-            totalSent: 22.1 * 1024 * 1024,
-            latencyPing: 26,
-            lastHandshake: 1,
-            sessionUptime: '00:00:01',
+            downloadSpeed: 0,
+            uploadSpeed: 0,
+            totalReceived: 0,
+            totalSent: 0,
+            latencyPing: 0,
+            lastHandshake: 0,
+            sessionUptime: '00:00:00',
             connectedSince: startTimestamp,
           });
 
-          if (webSimTimerRef.current) {
-            clearInterval(webSimTimerRef.current);
-          }
-
-          webSimTimerRef.current = setInterval(() => {
-            // Respect app foreground state: pause simulation updates in background
-            if (!useAppStore.getState().isAppActive) return;
-
-            secCount += 1;
-            const variance = (Math.random() - 0.5) * 4 * 1024 * 1024;
-            updateStats({
-              downloadSpeed: Math.max(10 * 1024 * 1024, 118.5 * 1024 * 1024 + variance),
-              uploadSpeed: Math.max(5 * 1024 * 1024, 38.2 * 1024 * 1024 + variance * 0.4),
-              latencyPing: Math.floor(24 + Math.random() * 6),
-              sessionUptime: formatUptime(secCount),
-            });
-          }, 1000);
-
           resolve(true);
-        }, 600);
+        }, 300);
       });
     },
     [platform, activeConfig, setConnectionState, setEngineError, updateStats]
@@ -384,12 +354,6 @@ export function useVpnEngine() {
   // ==========================================================================
   const disconnect = useCallback(async (): Promise<boolean> => {
     setEngineError(null);
-
-    // Stop web simulation timer if active
-    if (webSimTimerRef.current) {
-      clearInterval(webSimTimerRef.current);
-      webSimTimerRef.current = null;
-    }
 
     // 1. Mobile Pathway
     if (platform === 'mobile') {

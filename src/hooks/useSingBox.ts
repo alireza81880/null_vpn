@@ -194,22 +194,22 @@ export function useSingBox() {
         }
       }
 
-      // 2. Web Browser Preview Fallback (Graceful simulation)
+      // 2. Web Browser Preview Fallback (Graceful UI state transition, no fake throughput)
       return new Promise<boolean>((resolve) => {
         setTimeout(() => {
           setConnectionState('connected');
           updateStats({
-            downloadSpeed: 124.5 * 1024 * 1024,
-            uploadSpeed: 42.1 * 1024 * 1024,
-            totalReceived: 142.8 * 1024 * 1024,
-            totalSent: 38.4 * 1024 * 1024,
-            latencyPing: 24,
-            lastHandshake: 2,
-            sessionUptime: '00:01:24',
+            downloadSpeed: 0,
+            uploadSpeed: 0,
+            totalReceived: 0,
+            totalSent: 0,
+            latencyPing: 0,
+            lastHandshake: 0,
+            sessionUptime: '00:00:00',
             connectedSince: Date.now(),
           });
           resolve(true);
-        }, 800);
+        }, 400);
       });
     },
     [activeConfig, setConnectionState, setEngineError, updateStats]

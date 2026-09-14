@@ -99,16 +99,17 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
           >
             <Laptop className="w-6 h-6" />
           </div>
-          <div className="text-center">
+          <div className="text-center min-w-0 max-w-[100px] sm:max-w-[140px]">
             <span
               style={{ color: 'var(--text-primary)' }}
-              className="text-[11px] font-bold block tracking-tight"
+              className="text-[11px] font-bold block tracking-tight truncate"
             >
               Local Client
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="text-[10px] font-mono block truncate max-w-[90px] sm:max-w-[120px]"
+              className="text-[10px] font-mono block truncate"
+              title={isConnected ? clientIp : '127.0.0.1'}
             >
               {isConnected ? clientIp : '127.0.0.1'}
             </span>
@@ -271,16 +272,18 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
           >
             <Globe className="w-6 h-6" />
           </div>
-          <div className="text-center">
+          <div className="text-center min-w-0 max-w-[100px] sm:max-w-[140px]">
             <span
               style={{ color: 'var(--text-primary)' }}
-              className="text-[11px] font-bold block tracking-tight truncate max-w-[90px] sm:max-w-[120px]"
+              className="text-[11px] font-bold block tracking-tight truncate"
+              title={tunnelName}
             >
               {tunnelName}
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="text-[10px] font-mono block truncate max-w-[90px] sm:max-w-[120px]"
+              className="text-[10px] font-mono block truncate"
+              title={endpoint}
             >
               {endpoint}
             </span>
