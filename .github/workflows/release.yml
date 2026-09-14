@@ -1,10 +1,14 @@
 name: Build & Release Null VPN
 
 on:
+  workflow_dispatch: # اجازه اجرای دستی با یک کلیک از تب Actions
   push:
     tags:
       - 'v*'
-    
+
+permissions:
+  contents: write # مجوز لازم برای آپلود فایل نصبی در Releases
+
 jobs:
   build-desktop:
     runs-on: windows-latest
@@ -15,8 +19,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22 # استفاده از نسخه مدرن LTS برای حذف وارنینگ
 
       - name: Install Dependencies
         run: npm install
@@ -28,6 +31,8 @@ jobs:
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           files: 'dist/*.exe'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
