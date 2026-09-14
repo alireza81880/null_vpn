@@ -67,10 +67,13 @@ jobs:
       - name: Build React Frontend
         run: npm run build
 
-      - name: Initialize & Sync Capacitor Android
+      - name: Sync Capacitor Android
         run: |
-          npm install
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
           npx cap sync android
+
       - name: Build Android APK (Debug)
         run: |
           cd android
