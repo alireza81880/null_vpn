@@ -326,13 +326,14 @@ PersistentKeepalive = 25`;
             return (
               <button
                 key={item.id}
+                id={`filter-pill-${item.id}`}
                 type="button"
                 onClick={() => setSelectedProtocol(item.id)}
                 style={{
                   backgroundColor: isSelected
                     ? 'var(--accent-primary)'
                     : 'var(--bg-surface-elevated)',
-                  color: isSelected ? '#ffffff' : 'var(--text-secondary)',
+                  color: isSelected ? 'var(--accent-foreground, #ffffff)' : 'var(--text-primary)',
                   borderColor: isSelected ? 'var(--accent-primary)' : 'var(--border-subtle)',
                   boxShadow: isSelected ? '0 0 14px var(--accent-glow)' : 'none',
                 }}
@@ -341,10 +342,10 @@ PersistentKeepalive = 25`;
                 <span>{item.label}</span>
                 <span
                   style={{
-                    backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--border-subtle)',
-                    color: isSelected ? '#ffffff' : 'var(--text-muted)',
+                    backgroundColor: isSelected ? 'color-mix(in srgb, var(--accent-foreground, #ffffff) 20%, transparent)' : 'var(--border-subtle)',
+                    color: isSelected ? 'var(--accent-foreground, #ffffff)' : 'var(--text-muted)',
                   }}
-                  className="text-[10px] font-mono px-1.5 py-0.2 rounded-full"
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded-full"
                 >
                   {item.count}
                 </span>

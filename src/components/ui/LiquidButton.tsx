@@ -59,14 +59,14 @@ export const LiquidButton: React.FC<LiquidButtonProps> = ({
   // Micro-tactility, Inset Highlights, and 6-State Styling
   const variantStyles = {
     primary: [
-      // 60-30-10 Electric Blue (#3B82F6)
-      'bg-blue-600 text-white',
-      'border border-blue-400/40',
-      'shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_4px_20px_-2px_rgba(59,130,246,0.5)]',
-      glow ? 'hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_28px_rgba(59,130,246,0.65)]' : '',
-      'hover:bg-blue-500 hover:border-blue-300/60',
-      'active:bg-blue-700 active:shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]',
-      'focus-visible:ring-blue-400 focus-visible:ring-offset-[#0A0C10]',
+      // Dynamic Theme-Aware Primary Token
+      'bg-[var(--accent-primary)] text-[var(--accent-foreground,#ffffff)]',
+      'border border-[var(--border-accent)]',
+      'shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_4px_20px_-2px_var(--accent-glow)]',
+      glow ? 'hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.35),0_0_28px_var(--accent-glow)]' : '',
+      'hover:opacity-95 hover:border-[var(--border-glass)]',
+      'active:opacity-90 active:shadow-[inset_0_1px_3px_rgba(0,0,0,0.5)]',
+      'focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-[var(--bg-canvas)]',
     ].filter(Boolean).join(' '),
 
     purple: [
