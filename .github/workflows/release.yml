@@ -69,11 +69,8 @@ jobs:
 
       - name: Initialize & Sync Capacitor Android
         run: |
-          npm install @capacitor/cli @capacitor/android --no-save
-          npx cap init "Null VPN" "com.nullvpn.app" --web-dir dist
-          npx cap add android
+          npm install
           npx cap sync android
-
       - name: Build Android APK (Debug)
         run: |
           cd android
