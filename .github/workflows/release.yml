@@ -55,11 +55,35 @@ jobs:
         with:
           node-version: 22
 
-      - name: Setup Java (JDK 21)
+      - name: Setup Java (JDK 17)
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '21'
+          java-version: '17'
+
+      - name: Setup Go (For sing-box Native Core)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - name: Build Official sing-box libbox.aar (v1.10.7)
+        run: |
+          mkdir -p android/app/libs
+          LIBBOX_VER="v1.10.7"
+          echo "Cloning official sing-box source at $LIBBOX_VER..."
+          rm -rf /tmp/sing-box
+          git clone --depth 1 --branch "$LIBBOX_VER" https://github.com/SagerNet/sing-box.git /tmp/sing-box
+          cd /tmp/sing-box
+          
+          echo "Building libbox.aar using official sing-box build tool (make lib_android)..."
+          make lib_android
+          
+          test -s libbox.aar || exit 1
+          cp libbox.aar "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
+          test -s "$GITHUB_WORKSPACE/android/app/libs/libbox.aar" || exit 1
+          
+          echo "SUCCESS: Official sing-box libbox.aar generated and verified:"
+          ls -lh "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
 
       - name: Install Dependencies
         run: npm install

@@ -225,7 +225,7 @@ export function buildUniversalSingBoxConfig(
       servers: [
         {
           tag: 'dns-remote',
-          address: '1.1.1.1',
+          address: 'tcp://1.1.1.1',
           detour: 'proxy-out',
         },
         {
@@ -237,7 +237,7 @@ export function buildUniversalSingBoxConfig(
       rules: [
         {
           outbound: 'any',
-          server: 'dns-direct',
+          server: 'dns-remote',
         },
       ],
       strategy: 'prefer_ipv4',
@@ -248,11 +248,11 @@ export function buildUniversalSingBoxConfig(
         tag: 'tun-in',
         interface_name: isMobile ? 'tun0' : 'null-vpn0',
         inet4_address: '172.19.0.1/30',
+        inet6_address: 'fdfe:dcba:9876::1/126',
         mtu: 1500,
-        // On Android, auto_route is false because VpnService.Builder handles routing table configuration
-        auto_route: !isMobile,
+        auto_route: true,
         strict_route: false,
-        stack: 'system',
+        stack: 'gvisor',
         sniff: true,
       },
     ],
@@ -271,7 +271,7 @@ export function buildUniversalSingBoxConfig(
       rules: [
         {
           protocol: 'dns',
-          outbound: 'direct',
+          outbound: 'proxy-out',
         },
         {
           ip_is_private: true,

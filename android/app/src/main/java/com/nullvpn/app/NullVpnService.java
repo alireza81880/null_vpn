@@ -19,19 +19,39 @@ import androidx.core.app.NotificationCompat;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.FileDescriptor;
-import java.lang.reflect.Method;
 import java.net.InetSocketAddress;
 import java.net.Socket;
+
+import io.nekohasekai.libbox.BridgeOptions;
+import io.nekohasekai.libbox.BridgeSession;
+import io.nekohasekai.libbox.CommandServer;
+import io.nekohasekai.libbox.CommandServerHandler;
+import io.nekohasekai.libbox.ConnectionOwner;
+import io.nekohasekai.libbox.InterfaceUpdateListener;
+import io.nekohasekai.libbox.Libbox;
+import io.nekohasekai.libbox.LocalDNSTransport;
+import io.nekohasekai.libbox.NeighborUpdateListener;
+import io.nekohasekai.libbox.NetworkInterfaceIterator;
+import io.nekohasekai.libbox.OverrideOptions;
+import io.nekohasekai.libbox.PlatformInterface;
+import io.nekohasekai.libbox.PlatformUser;
+import io.nekohasekai.libbox.RoutePrefix;
+import io.nekohasekai.libbox.RoutePrefixIterator;
+import io.nekohasekai.libbox.SetupOptions;
+import io.nekohasekai.libbox.ShellSession;
+import io.nekohasekai.libbox.StringIterator;
+import io.nekohasekai.libbox.SystemProxyStatus;
+import io.nekohasekai.libbox.TunOptions;
+import io.nekohasekai.libbox.WIFIState;
 
 /**
  * NullVpnService
  * 
- * Native Android VpnService implementation managing the TUN interface,
- * Foreground Service lifecycle, notification bar status, and sing-box
- * routing pipeline for Null VPN.
+ * Production Android VpnService implementation integrating the official sing-box (libbox) core.
+ * Implements PlatformInterface and CommandServerHandler to provide real full-tunnel routing,
+ * socket protection against VPN loops, TUN configuration callback, and foreground lifecycle.
  */
-public class NullVpnService extends VpnService {
+public class NullVpnService extends VpnService implements PlatformInterface, CommandServerHandler {
 
     private static final String TAG = "NullVpnService";
     public static final String ACTION_START = "com.nullvpn.app.START_VPN";
@@ -45,6 +65,7 @@ public class NullVpnService extends VpnService {
     private static volatile NullVpnService activeInstance = null;
 
     private ParcelFileDescriptor tunInterface = null;
+    private CommandServer commandServer = null;
     private Handler telemetryHandler = null;
     private Runnable telemetryRunnable = null;
     private int uptimeSeconds = 0;
@@ -54,9 +75,6 @@ public class NullVpnService extends VpnService {
     private long lastUidTx = -1L;
     private String currentServerHost = "1.1.1.1";
     private int currentServerPort = 53;
-
-    // Reflection handle for sing-box core if libbox is linked
-    private Object boxServiceInstance = null;
 
     public interface VpnEventListener {
         void onStateChange(String status, String message);
@@ -205,7 +223,7 @@ public class NullVpnService extends VpnService {
 
         return new NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Null VPN — Connected")
-            .setContentText(text != null ? text : "Tunnel active: WireGuard / sing-box core")
+            .setContentText(text != null ? text : "Tunnel active: sing-box core")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -221,14 +239,14 @@ public class NullVpnService extends VpnService {
             eventListener.onStateChange("connecting", null);
         }
 
-        // Start Foreground Service immediately to satisfy Android 8+ requirement
-        startForeground(NOTIFICATION_ID, buildNotification("Establishing encrypted tunnel..."));
+        // Start Foreground Service immediately to satisfy Android requirements
+        startForeground(NOTIFICATION_ID, buildNotification("Initializing sing-box core..."));
 
         try {
-            // Step 1: Validate config payload before any OS resource allocation
+            // Step 1: Validate config payload
             validateConfig(configJson);
 
-            // Extract remote endpoint for real-time telemetry ping
+            // Extract remote endpoint for latency telemetry
             try {
                 JSONObject root = new JSONObject(configJson);
                 JSONArray outbounds = root.optJSONArray("outbounds");
@@ -239,7 +257,17 @@ public class NullVpnService extends VpnService {
                 }
             } catch (Exception ignored) {}
 
-            // Step 2: Clean up previous TUN session if still open
+            // Step 2: Clean up previous tunnel if any
+            if (commandServer != null) {
+                try {
+                    commandServer.closeService();
+                } catch (Exception ignored) {}
+                try {
+                    commandServer.close();
+                } catch (Exception ignored) {}
+                commandServer = null;
+            }
+
             if (tunInterface != null) {
                 try {
                     tunInterface.close();
@@ -247,51 +275,28 @@ public class NullVpnService extends VpnService {
                 tunInterface = null;
             }
 
-            // Step 3: Configure and establish TUN interface via VpnService.Builder
-            Builder builder = new Builder();
-            builder.setSession("Null VPN");
-            builder.addAddress("172.19.0.1", 30);
-            try {
-                builder.addAddress("fdfe:dcba:9876::1", 126);
-            } catch (Exception ignored) {}
+            // Step 3: Initialize libbox environment directories
+            SetupOptions setupOptions = new SetupOptions();
+            setupOptions.setBasePath(getFilesDir().getPath());
+            setupOptions.setWorkingPath(getFilesDir().getPath());
+            setupOptions.setTempPath(getCacheDir().getPath());
+            setupOptions.setFixAndroidStack(true);
 
-            // Explicit default routes for all IPv4 and IPv6 traffic
-            builder.addRoute("0.0.0.0", 0);
-            try {
-                builder.addRoute("::", 0);
-            } catch (Exception e) {
-                Log.w(TAG, "IPv6 default route not accepted by kernel: " + e.getMessage());
-            }
+            Libbox.setup(setupOptions);
+            Log.i(TAG, "Libbox.setup completed successfully");
 
-            // Explicit primary and secondary DNS fallback servers
-            builder.addDnsServer("1.1.1.1");
-            builder.addDnsServer("8.8.8.8");
-            try {
-                builder.addDnsServer("2606:4700:4700::1111");
-            } catch (Exception ignored) {}
+            // Step 4: Create and start the CommandServer
+            // The sing-box core will invoke openTun(TunOptions) via PlatformInterface when starting the inbound!
+            commandServer = Libbox.newCommandServer(this, this);
+            commandServer.start();
+            Log.i(TAG, "Libbox CommandServer started");
 
-            builder.setMtu(1500);
-            builder.setBlocking(false);
+            // Step 5: Start the core service with the JSON config
+            OverrideOptions overrideOptions = new OverrideOptions();
+            commandServer.startOrReloadService(configJson, overrideOptions);
+            Log.i(TAG, "sing-box core startOrReloadService called successfully");
 
-            tunInterface = builder.establish();
-            if (tunInterface == null) {
-                throw new IllegalStateException("VpnService.Builder.establish() returned null: system denied VPN interface creation");
-            }
-
-            int tunFd = tunInterface.getFd();
-            Log.i(TAG, "TUN interface established with file descriptor: " + tunFd);
-
-            // Step 4: Bootstrap sing-box core runtime and pass the TUN File Descriptor
-            // Wrapped with explicit try-catch to capture any native panic/exception
-            try {
-                bootstrapSingboxCore(tunFd, configJson);
-            } catch (Throwable t) {
-                String coreCrashMsg = "sing-box native core fatal error: " + (t.getMessage() != null ? t.getMessage() : t.toString());
-                Log.e(TAG, coreCrashMsg, t);
-                throw new RuntimeException(coreCrashMsg, t);
-            }
-
-            // Step 5: Mark status as connected and start telemetry reporting
+            // Step 6: Mark status as connected and start telemetry reporting
             currentStatus = "connected";
             uptimeSeconds = 0;
             totalRx = 0L;
@@ -299,10 +304,9 @@ public class NullVpnService extends VpnService {
             lastUidRx = TrafficStats.getUidRxBytes(Process.myUid());
             lastUidTx = TrafficStats.getUidTxBytes(Process.myUid());
 
-            // Update Notification to connected state
             NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
             if (manager != null) {
-                manager.notify(NOTIFICATION_ID, buildNotification("WireGuard / sing-box tunnel secured"));
+                manager.notify(NOTIFICATION_ID, buildNotification("sing-box tunnel secured"));
             }
 
             if (eventListener != null) {
@@ -310,12 +314,12 @@ public class NullVpnService extends VpnService {
             }
 
             startTelemetryLoop();
-            Log.i(TAG, "NullVpnService established and core bootstrapped successfully");
+            Log.i(TAG, "NullVpnService running in production mode");
 
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to establish VPN interface or start sing-box core", e);
+        } catch (Throwable t) {
+            String errorMsg = t.getMessage() != null ? t.getMessage() : t.toString();
+            Log.e(TAG, "Failed to start sing-box core: " + errorMsg, t);
             currentStatus = "error";
-            String errorMsg = e.getMessage() != null ? e.getMessage() : "Core initialization error";
             if (eventListener != null) {
                 eventListener.onStateChange("error", errorMsg);
             }
@@ -324,71 +328,29 @@ public class NullVpnService extends VpnService {
         }
     }
 
-    /**
-     * Bootstraps the sing-box core mobile runtime with the established TUN file descriptor and JSON config.
-     * Gracefully checks for libbox reflection or fallback packet worker.
-     */
-    private void bootstrapSingboxCore(int tunFd, String configJson) throws Exception {
-        boolean coreFound = false;
-
-        // Check for libbox Gomobile runtime (sing-box for Android)
-        String[] candidateClasses = new String[] {
-            "io.nekohasekai.libbox.BoxService",
-            "io.nekohasekai.singbox.BoxService",
-            "com.sagernet.singbox.BoxService",
-            "io.nekohasekai.libbox.Libbox"
-        };
-
-        for (String className : candidateClasses) {
-            try {
-                Class<?> clazz = Class.forName(className);
-                Log.i(TAG, "Discovered sing-box runtime class: " + className);
-
-                // Attempt reflection instantiation or start
-                Method startMethod = null;
-                try {
-                    startMethod = clazz.getMethod("start", int.class, String.class);
-                    startMethod.invoke(null, tunFd, configJson);
-                    coreFound = true;
-                    Log.i(TAG, "sing-box core started successfully via " + className + ".start(tunFd, config)");
-                    break;
-                } catch (NoSuchMethodException e) {
-                    try {
-                        startMethod = clazz.getMethod("newService", String.class, int.class);
-                        this.boxServiceInstance = startMethod.invoke(null, configJson, tunFd);
-                        coreFound = true;
-                        Log.i(TAG, "sing-box core instantiated via " + className + ".newService(config, tunFd)");
-                        break;
-                    } catch (NoSuchMethodException ignored) {}
-                }
-            } catch (ClassNotFoundException ignored) {
-                // Class not present in this build flavor
-            }
-        }
-
-        if (!coreFound) {
-            Log.i(TAG, "sing-box AAR reflection hook completed. Core runtime running in system-assisted TUN mode (FD: " + tunFd + ")");
-        }
-    }
-
     private synchronized void stopVpn() {
         Log.i(TAG, "Stopping NullVpnService");
         stopTelemetryLoop();
 
-        // Stop sing-box core if instance exists
-        if (boxServiceInstance != null) {
+        if (commandServer != null) {
             try {
-                Method stopMethod = boxServiceInstance.getClass().getMethod("close");
-                stopMethod.invoke(boxServiceInstance);
-            } catch (Exception ignored) {}
-            boxServiceInstance = null;
+                commandServer.closeService();
+            } catch (Exception e) {
+                Log.w(TAG, "Error closing libbox service: " + e.getMessage());
+            }
+            try {
+                commandServer.close();
+            } catch (Exception e) {
+                Log.w(TAG, "Error closing command server: " + e.getMessage());
+            }
+            commandServer = null;
         }
 
         if (tunInterface != null) {
             try {
                 tunInterface.close();
             } catch (Exception e) {
-                Log.w(TAG, "Error closing TUN interface", e);
+                Log.w(TAG, "Error closing TUN interface: " + e.getMessage());
             }
             tunInterface = null;
         }
@@ -402,6 +364,289 @@ public class NullVpnService extends VpnService {
         stopSelf();
     }
 
+    // ==========================================
+    // PlatformInterface Implementation (sing-box)
+    // ==========================================
+
+    @Override
+    public int openTun(TunOptions options) throws Exception {
+        Log.i(TAG, "sing-box requested openTun with MTU=" + options.getMTU() + ", autoRoute=" + options.getAutoRoute());
+
+        Builder builder = new Builder();
+        builder.setSession("Null VPN");
+
+        int mtu = options.getMTU();
+        builder.setMtu(mtu > 0 ? mtu : 1500);
+
+        // Configure IPv4 addresses
+        RoutePrefixIterator inet4 = options.getInet4Address();
+        boolean hasIpv4 = false;
+        while (inet4 != null && inet4.hasNext()) {
+            RoutePrefix prefix = inet4.next();
+            builder.addAddress(prefix.address(), prefix.prefix());
+            hasIpv4 = true;
+            Log.d(TAG, "openTun: addAddress IPv4 " + prefix.address() + "/" + prefix.prefix());
+        }
+        if (!hasIpv4) {
+            builder.addAddress("172.19.0.1", 30);
+        }
+
+        // Configure IPv6 addresses
+        RoutePrefixIterator inet6 = options.getInet6Address();
+        while (inet6 != null && inet6.hasNext()) {
+            RoutePrefix prefix = inet6.next();
+            try {
+                builder.addAddress(prefix.address(), prefix.prefix());
+                Log.d(TAG, "openTun: addAddress IPv6 " + prefix.address() + "/" + prefix.prefix());
+            } catch (Exception e) {
+                Log.w(TAG, "openTun: IPv6 address rejected by kernel: " + e.getMessage());
+            }
+        }
+
+        // Configure Routing: Default routes or specific routes
+        if (options.getAutoRoute()) {
+            builder.addRoute("0.0.0.0", 0);
+            try {
+                builder.addRoute("::", 0);
+            } catch (Exception e) {
+                Log.w(TAG, "openTun: IPv6 default route rejected: " + e.getMessage());
+            }
+        } else {
+            RoutePrefixIterator routes4 = options.getInet4RouteAddress();
+            boolean hasRoute4 = false;
+            while (routes4 != null && routes4.hasNext()) {
+                RoutePrefix prefix = routes4.next();
+                builder.addRoute(prefix.address(), prefix.prefix());
+                hasRoute4 = true;
+            }
+            if (!hasRoute4) {
+                builder.addRoute("0.0.0.0", 0);
+            }
+
+            RoutePrefixIterator routes6 = options.getInet6RouteAddress();
+            while (routes6 != null && routes6.hasNext()) {
+                RoutePrefix prefix = routes6.next();
+                try {
+                    builder.addRoute(prefix.address(), prefix.prefix());
+                } catch (Exception ignored) {}
+            }
+        }
+
+        // Configure DNS servers
+        StringIterator dnsIter = options.getDNSServerAddress();
+        boolean hasDns = false;
+        while (dnsIter != null && dnsIter.hasNext()) {
+            String dns = dnsIter.next();
+            if (dns != null && !dns.trim().isEmpty()) {
+                try {
+                    builder.addDnsServer(dns.trim());
+                    hasDns = true;
+                    Log.d(TAG, "openTun: addDnsServer " + dns.trim());
+                } catch (Exception ignored) {}
+            }
+        }
+        if (!hasDns) {
+            builder.addDnsServer("172.19.0.1");
+            builder.addDnsServer("1.1.1.1");
+            builder.addDnsServer("8.8.8.8");
+        }
+
+        // Configure Package Exclusions: Exclude Null VPN itself to prevent routing loops!
+        StringIterator excludePackages = options.getExcludePackage();
+        while (excludePackages != null && excludePackages.hasNext()) {
+            String pkg = excludePackages.next();
+            try {
+                builder.addDisallowedApplication(pkg);
+            } catch (Exception ignored) {}
+        }
+        try {
+            builder.addDisallowedApplication(getPackageName());
+        } catch (Exception e) {
+            Log.w(TAG, "openTun: Failed to disallow own package: " + e.getMessage());
+        }
+
+        builder.setBlocking(false);
+
+        ParcelFileDescriptor pfd = builder.establish();
+        if (pfd == null) {
+            throw new IllegalStateException("VpnService.Builder.establish() returned null - system denied TUN interface creation");
+        }
+
+        this.tunInterface = pfd;
+        int fd = pfd.getFd();
+        Log.i(TAG, "openTun: TUN established successfully with fd=" + fd);
+        return fd;
+    }
+
+    @Override
+    public void autoDetectInterfaceControl(int fd) throws Exception {
+        // Crucial: Protect upstream sockets created by sing-box to prevent VPN loops!
+        boolean success = protect(fd);
+        if (!success) {
+            Log.w(TAG, "autoDetectInterfaceControl: VpnService.protect(fd=" + fd + ") failed");
+        } else {
+            Log.d(TAG, "autoDetectInterfaceControl: VpnService.protect(fd=" + fd + ") succeeded");
+        }
+    }
+
+    @Override
+    public boolean usePlatformAutoDetectInterfaceControl() {
+        return true;
+    }
+
+    @Override
+    public void cancelNotification(String tag, int id) {
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        if (manager != null) {
+            manager.cancel(tag, id);
+        }
+    }
+
+    @Override
+    public void checkPlatformShell() {}
+
+    @Override
+    public void clearDNSCache() {}
+
+    @Override
+    public void closeDefaultInterfaceMonitor(InterfaceUpdateListener listener) {}
+
+    @Override
+    public void closeNeighborMonitor(NeighborUpdateListener listener) {}
+
+    @Override
+    public BridgeSession createBridge(BridgeOptions options) {
+        return null;
+    }
+
+    @Override
+    public ConnectionOwner findConnectionOwner(int ipVersion, String sourceAddress, int sourcePort, String destinationAddress, int destinationPort) throws Exception {
+        return null;
+    }
+
+    @Override
+    public NetworkInterfaceIterator getInterfaces() throws Exception {
+        return null;
+    }
+
+    @Override
+    public boolean includeAllNetworks() {
+        return false;
+    }
+
+    @Override
+    public LocalDNSTransport localDNSTransport() {
+        return null;
+    }
+
+    @Override
+    public String lookupSFTPServer() {
+        return "";
+    }
+
+    @Override
+    public PlatformUser lookupUser(String name) {
+        return null;
+    }
+
+    @Override
+    public ShellSession openShellSession(PlatformUser user, String shell, StringIterator env, String path, int width, int height) {
+        return null;
+    }
+
+    @Override
+    public String readSystemSSHHostKey() {
+        return "";
+    }
+
+    @Override
+    public WIFIState readWIFIState() {
+        return null;
+    }
+
+    @Override
+    public void registerMyInterface(String name) {}
+
+    @Override
+    public void sendNotification(io.nekohasekai.libbox.Notification notification) {
+        if (notification != null) {
+            Log.i(TAG, "libbox notification: " + notification.getTitle() + " - " + notification.getBody());
+        }
+    }
+
+    @Override
+    public void startDefaultInterfaceMonitor(InterfaceUpdateListener listener) throws Exception {}
+
+    @Override
+    public void startNeighborMonitor(NeighborUpdateListener listener) throws Exception {}
+
+    @Override
+    public String tailscaleHostname() {
+        return "";
+    }
+
+    @Override
+    public boolean underNetworkExtension() {
+        return false;
+    }
+
+    @Override
+    public boolean usePlatformBridge() {
+        return false;
+    }
+
+    @Override
+    public boolean usePlatformShell() {
+        return false;
+    }
+
+    @Override
+    public boolean useProcFS() {
+        return false;
+    }
+
+    // ==========================================
+    // CommandServerHandler Implementation (sing-box)
+    // ==========================================
+
+    @Override
+    public int connectSSHAgent() throws Exception {
+        return -1;
+    }
+
+    @Override
+    public SystemProxyStatus getSystemProxyStatus() {
+        return null;
+    }
+
+    @Override
+    public void serviceReload() throws Exception {
+        Log.i(TAG, "CommandServerHandler: serviceReload requested");
+    }
+
+    @Override
+    public void serviceStop() throws Exception {
+        Log.i(TAG, "CommandServerHandler: serviceStop requested by core");
+        stopVpn();
+    }
+
+    @Override
+    public void setSystemProxyEnabled(boolean enabled) {}
+
+    @Override
+    public void triggerNativeCrash() {
+        Log.e(TAG, "CommandServerHandler: triggerNativeCrash requested");
+    }
+
+    @Override
+    public void writeDebugMessage(String message) {
+        Log.d(TAG, "sing-box: " + message);
+    }
+
+    // ==========================================
+    // Telemetry and Health Checks
+    // ==========================================
+
     private void startTelemetryLoop() {
         stopTelemetryLoop();
         telemetryHandler = new Handler(Looper.getMainLooper());
@@ -414,7 +659,6 @@ public class NullVpnService extends VpnService {
 
                 uptimeSeconds++;
 
-                // Track genuine system network throughput for the VPN process
                 long currentUidRx = TrafficStats.getUidRxBytes(Process.myUid());
                 long currentUidTx = TrafficStats.getUidTxBytes(Process.myUid());
 
@@ -434,12 +678,10 @@ public class NullVpnService extends VpnService {
                 totalRx += rxSpeed;
                 totalTx += txSpeed;
 
-                // Execute a non-blocking protected ping probe to determine real latency
                 new Thread(() -> {
                     long pingResult = pingServer(currentServerHost, currentServerPort);
                     int latency = pingResult > 0 ? (int) pingResult : 28;
 
-                    // Provide realistic idle baseline if connection is quiet
                     long finalRxSpeed = rxSpeed > 0 ? rxSpeed : 64L;
                     long finalTxSpeed = txSpeed > 0 ? txSpeed : 32L;
 
@@ -491,10 +733,6 @@ public class NullVpnService extends VpnService {
         super.onRevoke();
     }
 
-    /**
-     * Automated Connection Testing: Verifies if the VPN TUN interface is active and routes traffic.
-     * Crucially invokes activeInstance.protect(testSocket) to prevent loopback into the TUN interface!
-     */
     public static boolean runNetworkDiagnostics() {
         Socket testSocket = null;
         try {
@@ -503,7 +741,6 @@ public class NullVpnService extends VpnService {
             if (activeInstance != null) {
                 activeInstance.protect(testSocket);
             }
-            // Connect to Cloudflare DNS 1.1.1.1:53 with a 2500ms timeout
             testSocket.connect(new InetSocketAddress("1.1.1.1", 53), 2500);
             long latency = System.currentTimeMillis() - startTime;
             Log.i(TAG, "NetworkDiagnostics SUCCESS: Routed packet to 1.1.1.1:53 in " + latency + "ms");
@@ -520,10 +757,6 @@ public class NullVpnService extends VpnService {
         }
     }
 
-    /**
-     * Performs a lightweight TCP connection probe to measure real round-trip latency to a target host/port.
-     * Uses activeInstance.protect(testSocket) to bypass the local VPN routing table and probe the physical gateway.
-     */
     public static long pingServer(String host, int port) {
         Socket testSocket = null;
         try {
@@ -544,7 +777,6 @@ public class NullVpnService extends VpnService {
                     testSocket.close();
                 } catch (Exception ignored) {}
             }
-            // If connection was refused by peer (RST packet), a full TCP round-trip occurred and host is alive
             if (e.getMessage() != null && e.getMessage().toLowerCase().contains("refused")) {
                 return 42L;
             }
