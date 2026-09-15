@@ -80,7 +80,7 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
       {/* Node Flow Track */}
       <div className="relative flex items-center justify-between gap-2 sm:gap-4 px-2">
         {/* 1. Client Endpoint Node */}
-        <div className="flex flex-col items-center gap-2 z-10">
+        <div className="flex flex-col items-center gap-2 z-10 w-[110px] sm:w-[130px] max-w-[120px] sm:max-w-[130px] min-w-0 shrink-0">
           <div
             style={{
               backgroundColor: isConnected
@@ -96,20 +96,20 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
                 ? '0 0 20px var(--accent-glow)'
                 : 'none',
             }}
-            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300"
+            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 shrink-0"
           >
             <Laptop className="w-6 h-6" />
           </div>
-          <div className="w-full max-w-[110px] sm:max-w-[130px] flex flex-col items-center overflow-hidden">
+          <div className="w-full max-w-[120px] flex flex-col items-center min-w-0 overflow-hidden">
             <span
               style={{ color: 'var(--text-primary)' }}
-              className="w-full text-center text-[11px] font-bold tracking-tight truncate overflow-hidden text-ellipsis whitespace-nowrap block"
+              className="w-full text-center text-[11px] font-bold tracking-tight truncate max-w-[120px] overflow-hidden whitespace-nowrap block"
             >
               Local Client
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="w-full text-center text-[10px] font-mono tracking-tighter truncate overflow-hidden text-ellipsis whitespace-nowrap block"
+              className="w-full text-center text-[10px] font-mono tracking-tighter truncate max-w-[120px] overflow-hidden whitespace-nowrap block"
               title={isConnected ? clientIp : '127.0.0.1'}
             >
               {isConnected ? clientIp : '127.0.0.1'}
@@ -253,7 +253,7 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
         </div>
 
         {/* 3. Server Gateway Node */}
-        <div className="flex flex-col items-center gap-2 z-10">
+        <div className="flex flex-col items-center gap-2 z-10 w-[110px] sm:w-[130px] max-w-[120px] sm:max-w-[130px] min-w-0 shrink-0">
           <div
             style={{
               backgroundColor: isConnected
@@ -269,21 +269,21 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
                 ? '0 0 20px var(--accent-purple-glow)'
                 : 'none',
             }}
-            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300"
+            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 shrink-0"
           >
             <Globe className="w-6 h-6" />
           </div>
-          <div className="w-full max-w-[110px] sm:max-w-[130px] flex flex-col items-center overflow-hidden">
+          <div className="w-full max-w-[120px] flex flex-col items-center min-w-0 overflow-hidden">
             <span
               style={{ color: 'var(--text-primary)' }}
-              className="w-full text-center text-[11px] font-bold tracking-tight truncate overflow-hidden text-ellipsis whitespace-nowrap block"
+              className="w-full text-center text-[11px] font-bold tracking-tight truncate max-w-[120px] overflow-hidden whitespace-nowrap block"
               title={tunnelName}
             >
               {tunnelName}
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="w-full text-center text-[10px] font-mono tracking-tighter truncate overflow-hidden text-ellipsis whitespace-nowrap block"
+              className="w-full text-center text-[10px] font-mono tracking-tighter truncate max-w-[120px] overflow-hidden whitespace-nowrap block"
               title={endpoint}
             >
               {endpoint}

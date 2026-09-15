@@ -255,7 +255,7 @@ PersistentKeepalive = 25`;
                 className="w-3.5 h-3.5 shrink-0"
                 style={{ color: 'var(--accent-primary)' }}
               />
-              <span className="font-mono tracking-tight truncate max-w-[160px] sm:max-w-xs">{activeTunnelName}</span>
+              <span className="font-mono tracking-tight truncate max-w-[120px] sm:max-w-[180px] overflow-hidden whitespace-nowrap block">{activeTunnelName}</span>
               <ChevronDown className={`w-3.5 h-3.5 opacity-60 transition-transform shrink-0 ${isTunnelDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 

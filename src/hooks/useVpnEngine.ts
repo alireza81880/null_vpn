@@ -21,8 +21,10 @@
 import { useEffect, useCallback, useMemo, useRef } from 'react';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { useAppStore } from '../store/useAppStore';
+import { useTunnelStore } from '../store/useTunnelStore';
 import { CapacitorSingbox } from '../plugins/SingboxPlugin';
 import { runNetworkDiagnostics } from '../utils/networkDiagnostics';
+import { buildUniversalSingBoxConfig, validateSingBoxConfig } from '../utils/singboxConfig';
 import type {
   SingBoxConfigInput,
   SingBoxConfigObject,
@@ -35,71 +37,10 @@ export type PlatformTarget = 'mobile' | 'electron' | 'web';
 
 /**
  * Builds a universal sing-box proxy configuration object from a WireGuard tunnel model.
+ * (Retained for backwards compatibility; forwards to buildUniversalSingBoxConfig)
  */
 export function buildSingBoxConfigFromWireguard(tunnel: WireguardTunnelConfig): SingBoxConfigObject {
-  const [endpointHost, endpointPortStr] = tunnel.endpoint.split(':');
-  const serverPort = endpointPortStr ? parseInt(endpointPortStr, 10) : 51820;
-
-  return {
-    log: {
-      disabled: false,
-      level: 'info',
-      timestamp: true,
-    },
-    dns: {
-      servers: [
-        {
-          tag: 'dns-remote',
-          address: tunnel.interface?.dns || '1.1.1.1',
-          detour: 'proxy-out',
-        },
-      ],
-    },
-    inbounds: [
-      {
-        type: 'tun',
-        tag: 'tun-in',
-        interface_name: 'null-vpn0',
-        inet4_address: '172.19.0.1/30',
-        auto_route: true,
-        strict_route: true,
-        stack: 'system',
-        sniff: true,
-      },
-    ],
-    outbounds: [
-      {
-        type: 'wireguard',
-        tag: 'proxy-out',
-        server: endpointHost || '127.0.0.1',
-        server_port: isNaN(serverPort) ? 51820 : serverPort,
-        local_address: tunnel.interface?.address ? [tunnel.interface.address] : ['10.14.0.2/32'],
-        private_key: tunnel.interface?.privateKey || '',
-        peer_public_key: tunnel.peer?.publicKey || '',
-        system_interface: false,
-      },
-      {
-        type: 'direct',
-        tag: 'direct',
-      },
-      {
-        type: 'block',
-        tag: 'block',
-      },
-    ],
-    route: {
-      rules: [
-        {
-          ip_is_private: true,
-          outbound: 'direct',
-        },
-        {
-          outbound: 'proxy-out',
-        },
-      ],
-      auto_detect_interface: true,
-    },
-  };
+  return buildUniversalSingBoxConfig(tunnel, { isMobile: true });
 }
 
 /**
@@ -290,11 +231,27 @@ export function useVpnEngine() {
           finalConfigObj = customConfig;
           finalConfigStr = JSON.stringify(customConfig, null, 2);
         }
-      } else if (activeConfig) {
-        finalConfigObj = buildSingBoxConfigFromWireguard(activeConfig);
-        finalConfigStr = JSON.stringify(finalConfigObj, null, 2);
       } else {
-        const err = 'No active VPN configuration selected to launch sing-box';
+        // Resolve active tunnel from multi-protocol store with fallback to appStore configs
+        const selectedTunnel = useTunnelStore.getState().getActiveTunnel() || activeConfig;
+
+        if (!selectedTunnel) {
+          const err = 'No active VPN configuration selected to launch sing-box';
+          setEngineError(err);
+          setConnectionState('disconnected');
+          return false;
+        }
+
+        finalConfigObj = buildUniversalSingBoxConfig(selectedTunnel, {
+          isMobile: platform === 'mobile',
+        });
+        finalConfigStr = JSON.stringify(finalConfigObj, null, 2);
+      }
+
+      // Strict Schema & Cryptographic Validation before native dispatch
+      const validation = validateSingBoxConfig(finalConfigObj || finalConfigStr);
+      if (!validation.valid) {
+        const err = validation.error || 'Invalid sing-box configuration payload';
         setEngineError(err);
         setConnectionState('disconnected');
         return false;

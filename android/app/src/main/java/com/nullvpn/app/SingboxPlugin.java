@@ -70,6 +70,18 @@ public class SingboxPlugin extends Plugin {
             return;
         }
 
+        // Validate sing-box configuration schema before launching OS service
+        try {
+            NullVpnService.validateConfig(config);
+        } catch (IllegalArgumentException e) {
+            Log.e(TAG, "sing-box configuration validation failed: " + e.getMessage());
+            JSObject ret = new JSObject();
+            ret.put("success", false);
+            ret.put("error", e.getMessage());
+            call.resolve(ret);
+            return;
+        }
+
         this.cachedConfig = config;
 
         // Check if Android OS requires user consent for VpnService

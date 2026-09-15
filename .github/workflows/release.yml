@@ -73,11 +73,10 @@ jobs:
             npx cap add android
           fi
           npx cap sync android
-          
+
       - name: Generate App Icons
         run: |
-          npm install -g @capacitor/assets
-          npx capacitor-assets generate --android
+          npm run generate-assets
           npx cap sync android
       - name: Build Android APK (Release)
         run: |
