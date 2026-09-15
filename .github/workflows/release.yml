@@ -75,6 +75,9 @@ jobs:
           git clone --depth 1 --branch "$LIBBOX_VER" https://github.com/SagerNet/sing-box.git /tmp/sing-box
           cd /tmp/sing-box
           
+          echo "Installing official sing-box libbox toolchain prerequisites (make lib_install)..."
+          make lib_install
+          
           echo "Building libbox.aar using official sing-box build tool (make lib_android)..."
           make lib_android
           
