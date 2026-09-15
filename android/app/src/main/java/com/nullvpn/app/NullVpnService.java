@@ -251,9 +251,25 @@ public class NullVpnService extends VpnService {
             Builder builder = new Builder();
             builder.setSession("Null VPN");
             builder.addAddress("172.19.0.1", 30);
+            try {
+                builder.addAddress("fdfe:dcba:9876::1", 126);
+            } catch (Exception ignored) {}
+
+            // Explicit default routes for all IPv4 and IPv6 traffic
             builder.addRoute("0.0.0.0", 0);
+            try {
+                builder.addRoute("::", 0);
+            } catch (Exception e) {
+                Log.w(TAG, "IPv6 default route not accepted by kernel: " + e.getMessage());
+            }
+
+            // Explicit primary and secondary DNS fallback servers
             builder.addDnsServer("1.1.1.1");
             builder.addDnsServer("8.8.8.8");
+            try {
+                builder.addDnsServer("2606:4700:4700::1111");
+            } catch (Exception ignored) {}
+
             builder.setMtu(1500);
             builder.setBlocking(false);
 
@@ -266,7 +282,14 @@ public class NullVpnService extends VpnService {
             Log.i(TAG, "TUN interface established with file descriptor: " + tunFd);
 
             // Step 4: Bootstrap sing-box core runtime and pass the TUN File Descriptor
-            bootstrapSingboxCore(tunFd, configJson);
+            // Wrapped with explicit try-catch to capture any native panic/exception
+            try {
+                bootstrapSingboxCore(tunFd, configJson);
+            } catch (Throwable t) {
+                String coreCrashMsg = "sing-box native core fatal error: " + (t.getMessage() != null ? t.getMessage() : t.toString());
+                Log.e(TAG, coreCrashMsg, t);
+                throw new RuntimeException(coreCrashMsg, t);
+            }
 
             // Step 5: Mark status as connected and start telemetry reporting
             currentStatus = "connected";

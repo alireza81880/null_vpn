@@ -423,7 +423,7 @@ PersistentKeepalive = 25`;
         </div>
 
         {/* Central Holographic Flow Node (Device -> Tunnel -> Endpoint) */}
-        <div className="my-3 sm:my-5">
+        <div className="my-3 sm:my-5 w-full min-w-0 overflow-hidden">
           <ConnectionNode
             connectionState={connectionState}
             endpoint={activeEndpoint}

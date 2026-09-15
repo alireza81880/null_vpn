@@ -75,12 +75,12 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
         willChange: 'transform',
         backfaceVisibility: 'hidden',
       }}
-      className="w-full py-2 select-none text-left"
+      className="w-full py-2 select-none text-left min-w-0 overflow-hidden"
     >
       {/* Node Flow Track */}
-      <div className="relative flex items-center justify-between gap-2 sm:gap-4 px-2">
+      <div className="relative flex flex-row items-center justify-between w-full min-w-0 gap-1.5 sm:gap-3 px-1 sm:px-2">
         {/* 1. Client Endpoint Node */}
-        <div className="flex flex-col items-center gap-2 z-10 w-[110px] sm:w-[130px] max-w-[120px] sm:max-w-[130px] min-w-0 shrink-0">
+        <div className="flex flex-col items-center gap-1.5 sm:gap-2 z-10 min-w-0 shrink flex-1 max-w-[110px] sm:max-w-[140px]">
           <div
             style={{
               backgroundColor: isConnected
@@ -96,20 +96,20 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
                 ? '0 0 20px var(--accent-glow)'
                 : 'none',
             }}
-            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 shrink-0"
+            className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 shrink-0"
           >
-            <Laptop className="w-6 h-6" />
+            <Laptop className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <div className="w-full max-w-[120px] flex flex-col items-center min-w-0 overflow-hidden">
+          <div className="w-full flex flex-col items-center min-w-0 overflow-hidden">
             <span
               style={{ color: 'var(--text-primary)' }}
-              className="w-full text-center text-[11px] font-bold tracking-tight truncate max-w-[120px] overflow-hidden whitespace-nowrap block"
+              className="w-full text-center text-[10px] sm:text-[11px] font-bold tracking-tight truncate overflow-hidden whitespace-nowrap block"
             >
               Local Client
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="w-full text-center text-[10px] font-mono tracking-tighter truncate max-w-[120px] overflow-hidden whitespace-nowrap block"
+              className="w-full text-center text-[9px] sm:text-[10px] font-mono tracking-tighter truncate overflow-hidden whitespace-nowrap block"
               title={isConnected ? clientIp : '127.0.0.1'}
             >
               {isConnected ? clientIp : '127.0.0.1'}
@@ -118,7 +118,7 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
         </div>
 
         {/* 2. Interactive SVG Data Tunnel with Animated Pulse */}
-        <div className="flex-1 relative flex flex-col items-center justify-center px-1 sm:px-3">
+        <div className="flex-1 min-w-0 relative flex flex-col items-center justify-center px-1 sm:px-2 overflow-hidden">
           {/* Cryptographic Badge Above Tunnel */}
           <div
             style={{
@@ -126,10 +126,10 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
               borderColor: 'var(--border-subtle)',
               color: 'var(--text-secondary)',
             }}
-            className="mb-2 flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono backdrop-blur-md"
+            className="mb-1.5 sm:mb-2 flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full border text-[9px] sm:text-[10px] font-mono backdrop-blur-md max-w-full min-w-0 overflow-hidden"
           >
             <Lock
-              className="w-3 h-3"
+              className="w-2.5 h-2.5 sm:w-3 sm:h-3 shrink-0"
               style={{
                 color: isConnected
                   ? 'var(--accent-primary)'
@@ -138,13 +138,13 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
                   : 'var(--text-muted)',
               }}
             />
-            <span className="truncate max-w-[140px] sm:max-w-none">{cipher}</span>
+            <span className="truncate min-w-0">{cipher}</span>
           </div>
 
           {/* Heavy SVG Optical Track */}
-          <div className="w-full relative h-6 flex items-center">
+          <div className="w-full relative h-6 flex items-center min-w-0">
             <svg
-              className="w-full h-full overflow-visible"
+              className="w-full h-full"
               preserveAspectRatio="none"
               viewBox="0 0 300 24"
             >
@@ -234,26 +234,26 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
                   ? '0 0 18px var(--accent-glow)'
                   : 'none',
               }}
-              className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 top-1/2 w-8 h-8 rounded-full flex items-center justify-center border backdrop-blur-xl transition-all duration-300"
+              className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 top-1/2 w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center border backdrop-blur-xl transition-all duration-300"
             >
               {isConnected ? (
-                <Zap className="w-4 h-4" />
+                <Zap className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               ) : isConnecting ? (
-                <ShieldCheck className="w-4 h-4" />
+                <ShieldCheck className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               ) : (
-                <Lock className="w-3.5 h-3.5" />
+                <Lock className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
               )}
             </div>
           </div>
 
           {/* Real-time Latency Radar / Protocol Label (Isolated from SVG paths) */}
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-1.5 sm:mt-2 flex items-center justify-center gap-1 sm:gap-2 max-w-full min-w-0 overflow-hidden">
             <LatencyBadge connectionState={connectionState} explicitPing={latencyPing} />
           </div>
         </div>
 
         {/* 3. Server Gateway Node */}
-        <div className="flex flex-col items-center gap-2 z-10 w-[110px] sm:w-[130px] max-w-[120px] sm:max-w-[130px] min-w-0 shrink-0">
+        <div className="flex flex-col items-center gap-1.5 sm:gap-2 z-10 min-w-0 shrink flex-1 max-w-[110px] sm:max-w-[140px]">
           <div
             style={{
               backgroundColor: isConnected
@@ -269,21 +269,21 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
                 ? '0 0 20px var(--accent-purple-glow)'
                 : 'none',
             }}
-            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 shrink-0"
+            className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center border transition-all duration-300 shrink-0"
           >
-            <Globe className="w-6 h-6" />
+            <Globe className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <div className="w-full max-w-[120px] flex flex-col items-center min-w-0 overflow-hidden">
+          <div className="w-full flex flex-col items-center min-w-0 overflow-hidden">
             <span
               style={{ color: 'var(--text-primary)' }}
-              className="w-full text-center text-[11px] font-bold tracking-tight truncate max-w-[120px] overflow-hidden whitespace-nowrap block"
+              className="w-full text-center text-[10px] sm:text-[11px] font-bold tracking-tight truncate overflow-hidden whitespace-nowrap block"
               title={tunnelName}
             >
               {tunnelName}
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="w-full text-center text-[10px] font-mono tracking-tighter truncate max-w-[120px] overflow-hidden whitespace-nowrap block"
+              className="w-full text-center text-[9px] sm:text-[10px] font-mono tracking-tighter truncate overflow-hidden whitespace-nowrap block"
               title={endpoint}
             >
               {endpoint}
