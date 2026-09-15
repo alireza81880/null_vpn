@@ -79,21 +79,35 @@ jobs:
           npm install -g @capacitor/assets
           npx capacitor-assets generate --android
           npx cap sync android
-      - name: Build Android APK (Debug)
+      - name: Build Android APK (Release)
         run: |
           cd android
           chmod +x ./gradlew
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
+
+      - name: Auto-Sign Release APK
+        run: |
+          # ساخت کلید موقت و امضای دیجیتال
+          keytool -genkey -v -keystore release.keystore -alias nullvpn -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Null VPN, O=Null, C=IR" -storepass nullvpn2026 -keypass nullvpn2026
+          
+          # پیدا کردن ابزار امضای اندروید
+          APKSIGNER=$(find $ANDROID_HOME/build-tools -name "apksigner" | sort -r | head -n 1)
+          
+          # امضای فایل
+          $APKSIGNER sign --ks release.keystore --ks-key-alias nullvpn --ks-pass pass:nullvpn2026 --key-pass pass:nullvpn2026 android/app/build/outputs/apk/release/app-release-unsigned.apk
+          
+          # تغییر نام فایل نهایی
+          mv android/app/build/outputs/apk/release/app-release-unsigned.apk android/app/build/outputs/apk/release/Null-VPN-Release.apk
 
       - name: Upload Android Artifact (For Manual Runs)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: Null-VPN-Android-APK
-          path: android/app/build/outputs/apk/debug/*.apk
+          name: Null-VPN-Android-Release-APK
+          path: android/app/build/outputs/apk/release/Null-VPN-Release.apk
 
       - name: Upload Release Asset (For Tag Pushes)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/debug/*.apk
+          files: android/app/build/outputs/apk/release/Null-VPN-Release.apk
