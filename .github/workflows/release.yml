@@ -88,6 +88,12 @@ jobs:
           echo "SUCCESS: Official sing-box libbox.aar generated and verified:"
           ls -lh "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
 
+      - name: Setup Java (JDK 21 for Capacitor & Android Build)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '21'
+
       - name: Install Dependencies
         run: npm install
 
