@@ -13,6 +13,7 @@ import type {
   VpnStopResult,
   VpnStatusPayload,
   VpnTelemetryPayload,
+  DiagnosticsResult,
   VpnEngineApi,
 } from '../src/types/singbox';
 
@@ -39,6 +40,20 @@ const vpnEngine: VpnEngineApi = {
    */
   getStatus: (): Promise<VpnStatusPayload> => {
     return ipcRenderer.invoke('vpn:getStatus');
+  },
+
+  /**
+   * Runs local TUN interface and network routing diagnostics
+   */
+  runDiagnostics: (): Promise<DiagnosticsResult> => {
+    return ipcRenderer.invoke('vpn:runDiagnostics');
+  },
+
+  /**
+   * Pings remote endpoint via TCP socket connection to measure RTT latency
+   */
+  pingServer: (ip: string, port: number): Promise<{ success: boolean; latencyMs: number; error?: string }> => {
+    return ipcRenderer.invoke('vpn:pingServer', ip, port);
   },
 
   /**

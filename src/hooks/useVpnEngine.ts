@@ -22,6 +22,7 @@ import { useEffect, useCallback, useMemo, useRef } from 'react';
 import { Capacitor, PluginListenerHandle } from '@capacitor/core';
 import { useAppStore } from '../store/useAppStore';
 import { CapacitorSingbox } from '../plugins/SingboxPlugin';
+import { runNetworkDiagnostics } from '../utils/networkDiagnostics';
 import type {
   SingBoxConfigInput,
   SingBoxConfigObject,
@@ -160,6 +161,12 @@ export function useVpnEngine() {
               case 'connected':
                 setConnectionState('connected');
                 setEngineError(null);
+                // Execute silent background routing verification
+                runNetworkDiagnostics().then((diag) => {
+                  if (diag.latencyMs) {
+                    updateStats({ latencyPing: diag.latencyMs });
+                  }
+                }).catch(() => {});
                 break;
               case 'disconnected':
                 setConnectionState('disconnected');
@@ -213,6 +220,12 @@ export function useVpnEngine() {
           case 'connected':
             setConnectionState('connected');
             setEngineError(null);
+            // Execute silent background routing verification
+            runNetworkDiagnostics().then((diag) => {
+              if (diag.latencyMs) {
+                updateStats({ latencyPing: diag.latencyMs });
+              }
+            }).catch(() => {});
             break;
           case 'disconnected':
             setConnectionState('disconnected');

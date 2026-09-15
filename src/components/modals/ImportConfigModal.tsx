@@ -60,9 +60,9 @@ export const ImportConfigModal: React.FC<ImportConfigModalProps> = ({ isOpen, on
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
       <div
-        className="w-full max-w-lg glass-panel-elevated rounded-2xl overflow-hidden shadow-2xl transition-all"
+        className="w-full max-w-lg glass-panel-elevated rounded-2xl overflow-hidden shadow-2xl transition-all max-h-[92vh] flex flex-col"
         style={{
           backgroundColor: 'var(--bg-surface)',
           borderColor: 'var(--border-strong)',
@@ -70,7 +70,7 @@ export const ImportConfigModal: React.FC<ImportConfigModalProps> = ({ isOpen, on
       >
         {/* Header */}
         <div
-          className="px-6 py-4 border-b flex items-center justify-between"
+          className="px-6 py-4 border-b flex items-center justify-between shrink-0"
           style={{ borderColor: 'var(--border-subtle)' }}
         >
           <div className="flex items-center gap-3">
@@ -98,7 +98,13 @@ export const ImportConfigModal: React.FC<ImportConfigModalProps> = ({ isOpen, on
         </div>
 
         {/* Content Form */}
-        <form onSubmit={handleSave} className="p-6 space-y-4 text-start">
+        <form
+          onSubmit={handleSave}
+          className="p-6 space-y-4 text-start overflow-y-auto flex-1 pb-8"
+          style={{
+            paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))',
+          }}
+        >
           {error && (
             <div
               className="flex items-center gap-2 p-3 rounded-xl text-xs font-medium border"

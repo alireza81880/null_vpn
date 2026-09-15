@@ -557,6 +557,7 @@ export const SettingsPage: React.FC = () => {
 
           {/* Engine Architecture Information Box */}
           <div
+            dir="ltr"
             style={{
               backgroundColor: 'var(--bg-surface-elevated)',
               borderColor: 'var(--border-subtle)',

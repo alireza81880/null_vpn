@@ -96,7 +96,10 @@ export interface AppState {
   // WireGuard Tunnels (Manual configs only)
   configs: WireguardTunnelConfig[];
   activeConfigId: string | null;
-  addConfig: (config: Omit<WireguardTunnelConfig, 'id' | 'createdAt'>) => string;
+  activeConfig: WireguardTunnelConfig | null;
+  getActiveConfig: () => WireguardTunnelConfig | null;
+  addConfig: (config: Omit<WireguardTunnelConfig, 'id' | 'createdAt'> & { id?: string }) => string;
+  updateConfig: (id: string, updates: Partial<WireguardTunnelConfig>) => void;
   removeConfig: (id: string) => void;
   setActiveConfigId: (id: string | null) => void;
   importSampleConfig: () => void;
@@ -125,6 +128,12 @@ export const useAppStore = create<AppState>((set, get) => {
   const initialTheme = getInitialTheme();
   const initialConfigs = getInitialConfigs();
   const initialActiveId = getInitialActiveConfigId();
+  const validActiveId =
+    initialActiveId && initialConfigs.some((c) => c.id === initialActiveId)
+      ? initialActiveId
+      : initialConfigs[0]?.id ?? null;
+  const initialActiveConfig =
+    initialConfigs.find((c) => c.id === validActiveId) || initialConfigs[0] || null;
 
   // Apply initial settings immediately to DOM
   applyLanguageToDOM(initialLang);
@@ -134,10 +143,14 @@ export const useAppStore = create<AppState>((set, get) => {
     language: initialLang,
     theme: initialTheme,
     configs: initialConfigs,
-    activeConfigId:
-      initialActiveId && initialConfigs.some((c) => c.id === initialActiveId)
-        ? initialActiveId
-        : initialConfigs[0]?.id ?? null,
+    activeConfigId: validActiveId,
+    activeConfig: initialActiveConfig,
+
+    getActiveConfig: () => {
+      const { configs, activeConfigId } = get();
+      return configs.find((c) => c.id === activeConfigId) || configs[0] || null;
+    },
+
     connectionState: 'disconnected',
     engineError: null,
     isAppActive: true,
@@ -173,7 +186,7 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     addConfig: (configData) => {
-      const newId = `wg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const newId = configData.id || `wg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
       const newConfig: WireguardTunnelConfig = {
         id: newId,
         name: configData.name.trim() || `Tunnel-${newId.slice(-4)}`,
@@ -191,9 +204,26 @@ export const useAppStore = create<AppState>((set, get) => {
       set({
         configs: updatedConfigs,
         activeConfigId: newId,
+        activeConfig: newConfig,
       });
 
       return newId;
+    },
+
+    updateConfig: (id: string, updates: Partial<WireguardTunnelConfig>) => {
+      const updatedConfigs = get().configs.map((c) => (c.id === id ? { ...c, ...updates } : c));
+      localStorage.setItem(STORAGE_KEYS.CONFIGS, JSON.stringify(updatedConfigs));
+
+      const activeId = get().activeConfigId;
+      const isEditingActive = activeId === id || get().activeConfig?.id === id;
+      const nextActive = isEditingActive
+        ? updatedConfigs.find((c) => c.id === id) || null
+        : get().activeConfig;
+
+      set({
+        configs: updatedConfigs,
+        activeConfig: nextActive,
+      });
     },
 
     removeConfig: (id: string) => {
@@ -213,9 +243,12 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ connectionState: 'disconnected' });
       }
 
+      const nextActiveConfig = remaining.find((c) => c.id === nextActive) || remaining[0] || null;
+
       set({
         configs: remaining,
         activeConfigId: nextActive,
+        activeConfig: nextActiveConfig,
       });
     },
 
@@ -226,14 +259,20 @@ export const useAppStore = create<AppState>((set, get) => {
         localStorage.removeItem(STORAGE_KEYS.ACTIVE_CONFIG_ID);
       }
 
+      const activeConfig = get().configs.find((c) => c.id === id) || null;
+
       // If we switch active tunnel while connected, disconnect first
       if (get().connectionState === 'connected' && id !== get().activeConfigId) {
         set({
           activeConfigId: id,
+          activeConfig,
           connectionState: 'disconnected',
         });
       } else {
-        set({ activeConfigId: id });
+        set({
+          activeConfigId: id,
+          activeConfig,
+        });
       }
     },
 
@@ -297,3 +336,14 @@ export const useAppStore = create<AppState>((set, get) => {
     },
   };
 });
+
+/**
+ * Derived selector hook: Dynamically resolves active config from configs array
+ * guarantees instant reactivity when a config name or endpoint is edited.
+ */
+export const useActiveConfig = (): WireguardTunnelConfig | null => {
+  return useAppStore((state) => {
+    return state.configs.find((c) => c.id === state.activeConfigId) || state.activeConfig || state.configs[0] || null;
+  });
+};
+

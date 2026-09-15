@@ -15,7 +15,8 @@ import {
   AlertTriangle,
   X,
 } from 'lucide-react';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore, useActiveConfig } from '../store/useAppStore';
+import { useTunnelStore, useActiveTunnel } from '../store/useTunnelStore';
 import { useI18n } from '../i18n/I18nContext';
 import { useVpnEngine } from '../hooks/useVpnEngine';
 import { BentoCard } from '../components/ui/BentoCard';
@@ -31,23 +32,72 @@ export const Dashboard: React.FC = () => {
   const connectionState = useAppStore((state) => state.connectionState);
   const importSampleConfig = useAppStore((state) => state.importSampleConfig);
 
+  const tunnels = useTunnelStore((state) => state.tunnels);
+  const activeTunnelId = useTunnelStore((state) => state.activeTunnelId);
+  const setActiveTunnel = useTunnelStore((state) => state.setActiveTunnel);
+
+  // Dynamic reactive selectors
+  const activeTunnel = useActiveTunnel();
+  const activeConfig = useActiveConfig();
+
   const { toggle, error, clearError, isMobile, isElectron } = useVpnEngine();
 
   const { t } = useI18n();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isTunnelDropdownOpen, setIsTunnelDropdownOpen] = useState(false);
 
-  const activeConfig = useMemo(() => {
-    return configs.find((c) => c.id === activeConfigId) || configs[0] || null;
-  }, [configs, activeConfigId]);
+  // Real-time reactive tunnel identification across both stores
+  const activeTunnelName =
+    activeTunnel?.name ||
+    activeConfig?.name ||
+    tunnels.find((t) => t.id === activeTunnelId)?.name ||
+    configs.find((c) => c.id === activeConfigId)?.name ||
+    tunnels[0]?.name ||
+    configs[0]?.name ||
+    'No Profile';
 
+  const activeEndpoint =
+    activeTunnel?.endpoint ||
+    activeConfig?.endpoint ||
+    tunnels.find((t) => t.id === activeTunnelId)?.endpoint ||
+    configs.find((c) => c.id === activeConfigId)?.endpoint ||
+    tunnels[0]?.endpoint ||
+    configs[0]?.endpoint ||
+    '';
+
+  const activeClientIp =
+    activeTunnel?.wireguard?.address ||
+    activeConfig?.interface?.address ||
+    '10.14.0.2/32';
+
+  const hasAnyTunnels = tunnels.length > 0 || configs.length > 0;
   const isConnected = connectionState === 'connected';
   const isConnecting = connectionState === 'connecting';
+
+  const handleLoadSample = () => {
+    importSampleConfig();
+    const sampleWG = `[Interface]
+PrivateKey = aGVsbG8td29ybGQtdGVzdC1rZXktZm9yLXVzZXItYWVnaXM=
+Address = 10.14.0.2/32
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = c2FtcGxlLXdpcmVndWFyZC1wdWJsaWMta2V5LXZwbi10dW5uZWw=
+Endpoint = frankfurt.edge.aegis-vpn.io:51820
+AllowedIPs = 0.0.0.0/0, ::/0
+PersistentKeepalive = 25`;
+    useTunnelStore.getState().addTunnel(sampleWG);
+  };
+
+  // Unified tunnel items for switching
+  const displayedTunnels = tunnels.length > 0
+    ? tunnels.map((t) => ({ id: t.id, name: t.name, endpoint: t.endpoint }))
+    : configs.map((c) => ({ id: c.id, name: c.name, endpoint: c.endpoint }));
 
   // ==========================================================================
   // 1. EMPTY STATE BENTO ARCHITECTURE (Zero-Trust Configuration Vault)
   // ==========================================================================
-  if (configs.length === 0) {
+  if (!hasAnyTunnels) {
     return (
       <div className="w-full max-w-4xl mx-auto py-6 sm:py-10">
         <div className="grid grid-cols-12 gap-4 md:gap-5">
@@ -125,7 +175,7 @@ export const Dashboard: React.FC = () => {
                 size="lg"
                 className="w-full sm:w-auto"
                 icon={<Sparkles className="w-4 h-4 text-blue-400" />}
-                onClick={importSampleConfig}
+                onClick={handleLoadSample}
               >
                 {t('dashboard.loadSample')}
               </LiquidButton>
@@ -195,7 +245,7 @@ export const Dashboard: React.FC = () => {
                 color: 'var(--text-primary)',
               }}
               className="flex items-center gap-2.5 px-3.5 py-2 rounded-xl border text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer max-w-full min-w-0"
-              title={activeConfig?.name || 'No Profile'}
+              title={activeTunnelName}
             >
               <div
                 style={{ backgroundColor: 'var(--accent-primary)' }}
@@ -205,7 +255,7 @@ export const Dashboard: React.FC = () => {
                 className="w-3.5 h-3.5 shrink-0"
                 style={{ color: 'var(--accent-primary)' }}
               />
-              <span className="font-mono tracking-tight truncate max-w-[160px] sm:max-w-xs">{activeConfig?.name || 'No Profile'}</span>
+              <span className="font-mono tracking-tight truncate max-w-[160px] sm:max-w-xs">{activeTunnelName}</span>
               <ChevronDown className={`w-3.5 h-3.5 opacity-60 transition-transform shrink-0 ${isTunnelDropdownOpen ? 'rotate-180' : ''}`} />
             </button>
 
@@ -235,17 +285,21 @@ export const Dashboard: React.FC = () => {
                     }}
                     className="text-[9px] px-1.5 py-0.5 rounded"
                   >
-                    {configs.length}
+                    {displayedTunnels.length}
                   </span>
                 </div>
                 <div className="max-h-56 overflow-y-auto space-y-1">
-                  {configs.map((c) => {
-                    const isSelected = c.id === activeConfig?.id;
+                  {displayedTunnels.map((c) => {
+                    const isSelected =
+                      c.id === activeTunnelId ||
+                      c.id === activeConfigId ||
+                      c.name === activeTunnelName;
                     return (
                       <button
                         key={c.id}
                         type="button"
                         onClick={() => {
+                          setActiveTunnel(c.id);
                           setActiveConfigId(c.id);
                           setIsTunnelDropdownOpen(false);
                         }}
@@ -372,10 +426,10 @@ export const Dashboard: React.FC = () => {
         <div className="my-3 sm:my-5">
           <ConnectionNode
             connectionState={connectionState}
-            endpoint={activeConfig?.endpoint}
-            clientIp={activeConfig?.interface?.address || '10.14.0.2/32'}
+            endpoint={activeEndpoint}
+            clientIp={activeClientIp}
             cipher="ChaCha20-Poly1305"
-            tunnelName={activeConfig?.name}
+            tunnelName={activeTunnelName}
           />
         </div>
 
@@ -425,15 +479,16 @@ export const Dashboard: React.FC = () => {
         colSpan="col-span-12"
         bodyClassName="p-4 sm:p-5"
       >
-        <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+        <div dir="ltr" className="flex flex-wrap items-center justify-between gap-3 text-xs font-mono text-left">
           {/* ChaCha20 Cipher Chip */}
           <div
+            dir="ltr"
             style={{
               backgroundColor: 'var(--bg-surface-elevated)',
               borderColor: 'var(--border-subtle)',
               color: 'var(--text-secondary)',
             }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border text-left"
           >
             <Lock className="w-3.5 h-3.5 text-blue-400" />
             <span style={{ color: 'var(--text-primary)' }} className="font-semibold">Cipher:</span>
@@ -442,12 +497,13 @@ export const Dashboard: React.FC = () => {
 
           {/* Curve25519 Chip */}
           <div
+            dir="ltr"
             style={{
               backgroundColor: 'var(--bg-surface-elevated)',
               borderColor: 'var(--border-subtle)',
               color: 'var(--text-secondary)',
             }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border text-left"
           >
             <Cpu className="w-3.5 h-3.5 text-purple-400" />
             <span style={{ color: 'var(--text-primary)' }} className="font-semibold">Curve:</span>
@@ -456,12 +512,13 @@ export const Dashboard: React.FC = () => {
 
           {/* Kill Switch Chip */}
           <div
+            dir="ltr"
             style={{
               backgroundColor: 'var(--bg-surface-elevated)',
               borderColor: 'var(--border-subtle)',
               color: 'var(--text-secondary)',
             }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border text-left"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span style={{ color: 'var(--text-primary)' }} className="font-semibold">{t('dashboard.killSwitch')}:</span>
@@ -470,12 +527,13 @@ export const Dashboard: React.FC = () => {
 
           {/* DNS Shield Chip */}
           <div
+            dir="ltr"
             style={{
               backgroundColor: 'var(--bg-surface-elevated)',
               borderColor: 'var(--border-subtle)',
               color: 'var(--text-secondary)',
             }}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border"
+            className="flex items-center gap-2 px-3 py-1.5 rounded-xl border text-left"
           >
             <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
             <span style={{ color: 'var(--text-primary)' }} className="font-semibold">{t('dashboard.dnsShield')}:</span>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Layers,
@@ -11,6 +11,7 @@ import {
   Check,
   X,
   Edit3,
+  RefreshCw,
 } from 'lucide-react';
 import { useTunnelStore, type TunnelItem, type TunnelProtocol } from '../store/useTunnelStore';
 import { useAppStore } from '../store/useAppStore';
@@ -19,6 +20,7 @@ import { TunnelCard } from '../components/vpn/TunnelCard';
 import { ImportModal } from '../components/modals/ImportModal';
 import { LiquidButton } from '../components/ui/LiquidButton';
 import { BentoCard } from '../components/ui/BentoCard';
+import { pingServerEndpoint } from '../utils/networkDiagnostics';
 
 export const ServersPage: React.FC = () => {
   const { t } = useI18n();
@@ -39,6 +41,43 @@ export const ServersPage: React.FC = () => {
   const [editName, setEditName] = useState('');
   const [editEndpoint, setEditEndpoint] = useState('');
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+
+  // Real-time ping latency map: tunnel.id -> latency in ms
+  const [pingLatencies, setPingLatencies] = useState<Record<string, number>>({});
+  const [isPingingAll, setIsPingingAll] = useState(false);
+  const isPingingRef = useRef(false);
+
+  // Real-time ping check loop across all configurations
+  const refreshAllPings = useCallback(async () => {
+    if (isPingingRef.current || tunnels.length === 0) return;
+    isPingingRef.current = true;
+    setIsPingingAll(true);
+
+    const results: Record<string, number> = {};
+    for (const tun of tunnels) {
+      try {
+        const ms = await pingServerEndpoint(tun.endpoint);
+        results[tun.id] = ms;
+      } catch {
+        results[tun.id] = -1;
+      }
+    }
+
+    setPingLatencies((prev) => ({ ...prev, ...results }));
+    setIsPingingAll(false);
+    isPingingRef.current = false;
+  }, [tunnels]);
+
+  // Initial and periodic ping measurement (every 12 seconds)
+  useEffect(() => {
+    refreshAllPings();
+
+    const intervalId = setInterval(() => {
+      refreshAllPings();
+    }, 12000);
+
+    return () => clearInterval(intervalId);
+  }, [refreshAllPings]);
 
   // Available protocols and their counts
   const protocolCounts = useMemo(() => {
@@ -297,8 +336,25 @@ PersistentKeepalive = 25`;
             )}
           </div>
 
-          {/* Action Buttons: Add Config */}
+          {/* Action Buttons: Add Config & Refresh Latency */}
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              id="btn-refresh-pings"
+              onClick={refreshAllPings}
+              disabled={isPingingAll}
+              title="Ping all configurations"
+              style={{
+                backgroundColor: 'var(--bg-surface-elevated)',
+                borderColor: 'var(--border-subtle)',
+                color: 'var(--text-secondary)',
+              }}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-2xl border text-xs font-semibold hover:text-[var(--text-primary)] hover:border-[var(--border-focus)] transition-all cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isPingingAll ? 'animate-spin text-[var(--accent-primary)]' : ''}`} />
+              <span className="hidden sm:inline">Ping All</span>
+            </button>
+
             <LiquidButton
               id="btn-tunnels-add-new"
               variant="primary"
@@ -416,6 +472,7 @@ PersistentKeepalive = 25`;
                   <TunnelCard
                     tunnel={tunnel}
                     isActive={isActive}
+                    latencyMs={pingLatencies[tunnel.id] ?? null}
                     onSelect={handleSelectTunnel}
                     onDelete={handleDeleteTunnel}
                     onEdit={handleOpenEdit}
@@ -439,7 +496,7 @@ PersistentKeepalive = 25`;
       {/* 2. Bento Edit Modal */}
       {editingTunnel && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-in fade-in duration-200"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
           onClick={(e) => {
             if (e.target === e.currentTarget) setEditingTunnel(null);
           }}

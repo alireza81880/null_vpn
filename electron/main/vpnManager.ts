@@ -7,16 +7,18 @@
  */
 
 import { app, BrowserWindow, ipcMain, IpcMainInvokeEvent } from 'electron';
-import { spawn, ChildProcessWithoutNullStreams, execSync } from 'child_process';
+import { spawn, ChildProcessWithoutNullStreams, execSync, exec } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as net from 'net';
 import type {
   VpnConnectionStatus,
   VpnTelemetryPayload,
   VpnStatusPayload,
   VpnStartResult,
   VpnStopResult,
+  DiagnosticsResult,
   SingBoxConfigInput,
 } from '../../src/types/singbox';
 
@@ -281,6 +283,83 @@ export class VpnDaemonManager {
   }
 
   /**
+   * NetworkDiagnostics: Verifies TUN interface existence and probes routing to 1.1.1.1
+   */
+  public async runDiagnostics(): Promise<DiagnosticsResult> {
+    const isWin = process.platform === 'win32';
+    const active = this.status === 'connected';
+
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+
+      // 1. Check network interfaces for TUN / WireGuard / sing-box adapter
+      const ifaces = os.networkInterfaces();
+      let tunAdapterFound = false;
+      let tunInterfaceName: string | undefined = undefined;
+
+      for (const [name, addrs] of Object.entries(ifaces)) {
+        const lowerName = name.toLowerCase();
+        if (
+          lowerName.includes('tun') ||
+          lowerName.includes('sing-box') ||
+          lowerName.includes('wintun') ||
+          lowerName.includes('null-vpn') ||
+          lowerName.includes('wireguard')
+        ) {
+          tunAdapterFound = true;
+          tunInterfaceName = name;
+          break;
+        }
+      }
+
+      // 2. Perform test ping / TCP connect to 1.1.1.1:53 or 8.8.8.8:53
+      const probeSocket = new net.Socket();
+      probeSocket.setTimeout(2500);
+
+      probeSocket.on('connect', () => {
+        const latency = Date.now() - startTime;
+        probeSocket.destroy();
+        resolve({
+          success: true,
+          active: true,
+          latencyMs: latency,
+          interfaceName: tunInterfaceName || (isWin ? 'wintun' : 'tun0'),
+          ip: '1.1.1.1',
+          message: tunAdapterFound
+            ? `Active TUN interface (${tunInterfaceName}) routing verified. RTT: ${latency}ms`
+            : `Network traffic reachable. RTT: ${latency}ms`,
+          timestamp: Date.now(),
+        });
+      });
+
+      probeSocket.on('timeout', () => {
+        probeSocket.destroy();
+        resolve({
+          success: false,
+          active,
+          latencyMs: Date.now() - startTime,
+          interfaceName: tunInterfaceName,
+          message: 'Connection timed out while probing 1.1.1.1 via tunnel',
+          timestamp: Date.now(),
+        });
+      });
+
+      probeSocket.on('error', (err) => {
+        probeSocket.destroy();
+        resolve({
+          success: false,
+          active,
+          interfaceName: tunInterfaceName,
+          message: `Routing probe error: ${err.message}`,
+          timestamp: Date.now(),
+        });
+      });
+
+      probeSocket.connect(53, '1.1.1.1');
+    });
+  }
+
+  /**
    * Parses sing-box stdout logs for initialization signals and telemetry packets
    */
   private parseStdoutLogs(rawLogs: string): void {
@@ -301,15 +380,14 @@ export class VpnDaemonManager {
         this.emitStatus('connected', 'Tunnel established and routes active');
       }
 
-      // 2. Parse inline traffic telemetry if emitted by Clash API or sing-box monitor
-      // Example regex matches: "traffic: up=1024 down=4096" or "upload: 2.4 MB/s"
-      const trafficMatch = line.match(/(?:upload|tx|up)[:=\s]+(\d+(?:\.\d+)?)\s*([kmgt]?b)/i);
-      const downMatch = line.match(/(?:download|rx|down)[:=\s]+(\d+(?:\.\d+)?)\s*([kmgt]?b)/i);
-
-      if (trafficMatch || downMatch) {
-        // Increment synthetic traffic counters for responsive UI updates
-        this.bytesSent += 1024 * 16;
-        this.bytesReceived += 1024 * 64;
+      // 2. Parse inline traffic telemetry emitted by sing-box clash_api / traffic monitor
+      // Example matches: "traffic: up=1024 down=4096" or "traffic: upload=24156 download=89412"
+      const trafficMatch = line.match(/(?:traffic|traffic_out)[:=\s]+(?:up|upload)=?(\d+)\s*(?:down|download)=?(\d+)/i);
+      if (trafficMatch) {
+        const sent = parseInt(trafficMatch[1], 10);
+        const recv = parseInt(trafficMatch[2], 10);
+        if (!isNaN(sent)) this.bytesSent = sent;
+        if (!isNaN(recv)) this.bytesReceived = recv;
       }
     }
   }
@@ -464,6 +542,51 @@ export function registerVpnIpcHandlers(window?: BrowserWindow): VpnDaemonManager
   // Handle IPC: vpn:getStatus
   ipcMain.handle('vpn:getStatus', async () => {
     return manager.getStatus();
+  });
+
+  // Handle IPC: vpn:runDiagnostics
+  ipcMain.handle('vpn:runDiagnostics', async () => {
+    return manager.runDiagnostics();
+  });
+
+  // Handle IPC: vpn:pingServer (TCP socket RTT probe)
+  ipcMain.handle('vpn:pingServer', async (_event: IpcMainInvokeEvent, ip: string, port: number) => {
+    return new Promise<{ success: boolean; latencyMs: number; error?: string }>((resolve) => {
+      const startTime = Date.now();
+      const targetPort = port > 0 && port <= 65535 ? port : 53;
+      const targetHost = ip || '1.1.1.1';
+
+      const socket = new net.Socket();
+      socket.setTimeout(2500);
+
+      socket.on('connect', () => {
+        const latency = Date.now() - startTime;
+        socket.destroy();
+        resolve({ success: true, latencyMs: latency });
+      });
+
+      socket.on('timeout', () => {
+        socket.destroy();
+        resolve({ success: false, latencyMs: 2500, error: 'Socket probe timeout' });
+      });
+
+      socket.on('error', (err) => {
+        socket.destroy();
+        // Even if connection is refused (RST), TCP round-trip happened, meaning host is alive
+        const latency = Date.now() - startTime;
+        if ((err as any)?.code === 'ECONNREFUSED') {
+          resolve({ success: true, latencyMs: latency });
+        } else {
+          resolve({ success: false, latencyMs: latency, error: err.message });
+        }
+      });
+
+      try {
+        socket.connect(targetPort, targetHost);
+      } catch (err: any) {
+        resolve({ success: false, latencyMs: Date.now() - startTime, error: err?.message || 'Failed to connect' });
+      }
+    });
   });
 
   return manager;

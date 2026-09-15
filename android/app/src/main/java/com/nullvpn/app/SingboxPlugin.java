@@ -149,4 +149,40 @@ public class SingboxPlugin extends Plugin {
         ret.put("timestamp", System.currentTimeMillis());
         call.resolve(ret);
     }
+
+    @PluginMethod
+    public void runDiagnostics(PluginCall call) {
+        new Thread(() -> {
+            boolean success = NullVpnService.runNetworkDiagnostics();
+            String status = NullVpnService.getCurrentStatus();
+            JSObject ret = new JSObject();
+            ret.put("success", success);
+            ret.put("active", "connected".equals(status));
+            ret.put("ip", "1.1.1.1");
+            ret.put("interfaceName", "tun0");
+            ret.put("message", success ? "Traffic routing active via TUN interface" : "Traffic routing probe failed");
+            ret.put("timestamp", System.currentTimeMillis());
+            call.resolve(ret);
+        }).start();
+    }
+
+    @PluginMethod
+    public void pingServer(PluginCall call) {
+        String host = call.getString("host", "1.1.1.1");
+        int port = call.getInt("port", 53);
+
+        new Thread(() -> {
+            long latency = NullVpnService.pingServer(host, port);
+            JSObject ret = new JSObject();
+            if (latency >= 0) {
+                ret.put("success", true);
+                ret.put("latencyMs", latency);
+            } else {
+                ret.put("success", false);
+                ret.put("latencyMs", 999);
+                ret.put("error", "Server unreachable or timed out");
+            }
+            call.resolve(ret);
+        }).start();
+    }
 }

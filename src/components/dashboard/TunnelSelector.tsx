@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Radio, ChevronDown, Check, Globe, Shield, Plus, Sparkles } from 'lucide-react';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, useActiveConfig } from '../../store/useAppStore';
+import { useTunnelStore, useActiveTunnel } from '../../store/useTunnelStore';
 import { useI18n } from '../../i18n/I18nContext';
 
 export interface TunnelSelectorProps {
@@ -14,13 +15,41 @@ export const TunnelSelector: React.FC<TunnelSelectorProps> = React.memo(({ onOpe
   const setActiveConfigId = useAppStore((state) => state.setActiveConfigId);
   const connectionState = useAppStore((state) => state.connectionState);
 
+  const tunnels = useTunnelStore((state) => state.tunnels);
+  const activeTunnelId = useTunnelStore((state) => state.activeTunnelId);
+  const setActiveTunnel = useTunnelStore((state) => state.setActiveTunnel);
+
+  const activeTunnel = useActiveTunnel();
+  const activeConfig = useActiveConfig();
+
   const { t, isRTL } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const activeConfig = configs.find((c) => c.id === activeConfigId) || configs[0] || null;
+  const activeName =
+    activeTunnel?.name ||
+    activeConfig?.name ||
+    tunnels.find((t) => t.id === activeTunnelId)?.name ||
+    configs.find((c) => c.id === activeConfigId)?.name ||
+    tunnels[0]?.name ||
+    configs[0]?.name ||
+    t('dashboard.noTunnelSelected');
+
+  const activeEndpoint =
+    activeTunnel?.endpoint ||
+    activeConfig?.endpoint ||
+    tunnels.find((t) => t.id === activeTunnelId)?.endpoint ||
+    configs.find((c) => c.id === activeConfigId)?.endpoint ||
+    tunnels[0]?.endpoint ||
+    configs[0]?.endpoint ||
+    '';
+
   const isConnected = connectionState === 'connected';
   const isConnecting = connectionState === 'connecting';
+
+  const items = tunnels.length > 0
+    ? tunnels.map((t) => ({ id: t.id, name: t.name, endpoint: t.endpoint }))
+    : configs.map((c) => ({ id: c.id, name: c.name, endpoint: c.endpoint }));
 
   // Close when clicked outside
   useEffect(() => {
@@ -60,16 +89,20 @@ export const TunnelSelector: React.FC<TunnelSelectorProps> = React.memo(({ onOpe
             <Radio className={`w-4 h-4 ${isConnected ? 'animate-pulse' : ''}`} />
           </div>
 
-          <div className="flex flex-col min-w-0">
+          <div className="flex flex-col min-w-0 flex-1 overflow-hidden">
             <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
               {t('dashboard.activeTunnel')}
             </span>
-            <span className="text-sm font-bold truncate" style={{ color: 'var(--text-primary)' }}>
-              {activeConfig ? activeConfig.name : t('dashboard.noTunnelSelected')}
+            <span
+              className="text-sm font-bold truncate w-full overflow-hidden"
+              style={{ color: 'var(--text-primary)' }}
+              title={activeName}
+            >
+              {activeName}
             </span>
-            {activeConfig && (
-              <span className="text-[11px] font-mono truncate" style={{ color: 'var(--text-secondary)' }}>
-                {activeConfig.endpoint}
+            {activeEndpoint && (
+              <span className="text-[11px] font-mono truncate w-full overflow-hidden" style={{ color: 'var(--text-secondary)' }}>
+                {activeEndpoint}
               </span>
             )}
           </div>
@@ -98,14 +131,18 @@ export const TunnelSelector: React.FC<TunnelSelectorProps> = React.memo(({ onOpe
             }}
           >
             <div className="max-h-60 overflow-y-auto px-1.5 py-1 space-y-1">
-              {configs.map((config) => {
-                const isSelected = activeConfig?.id === config.id;
+              {items.map((config) => {
+                const isSelected =
+                  config.id === activeTunnelId ||
+                  config.id === activeConfigId ||
+                  config.name === activeName;
                 return (
                   <button
                     key={config.id}
                     id={`tunnel-option-${config.id}`}
                     type="button"
                     onClick={() => {
+                      setActiveTunnel(config.id);
                       setActiveConfigId(config.id);
                       setIsOpen(false);
                     }}

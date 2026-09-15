@@ -5,14 +5,13 @@ import { useI18n } from '../../i18n/I18nContext';
 import type { NavTab } from '../../types/navigation';
 
 /**
- * BottomNav (Liquid Glass 2.0 Sticky Mobile Navigation Bar)
+ * BottomNav (Telegram-Style Floating Glassmorphic Navigation)
  * 
- * Performance & Architecture:
- * - Fixed firmly to bottom viewport (`fixed bottom-0 left-0 w-full z-50`).
- * - High-density frosted glass (iOS Control Center style blur(24px) + color-mix(85% surface)).
- * - Luminous 1px top border and gradient separator preventing content bleed-through.
- * - Dynamic theme adaptation across all 12 themes via CSS variables.
- * - Hardware compositing with `translateZ(0)`.
+ * Features:
+ * - Floating, elevated bar (`bottom-4 left-0 right-0 max-w-sm mx-auto`).
+ * - Translucent glassmorphism (`bg-white/10 backdrop-blur-md border border-white/15`).
+ * - Separate floating circular buttons (`rounded-full`) for each navigation tab.
+ * - Tactile active feedback with subtle glow and spring scaling.
  */
 export const BottomNav: React.FC = () => {
   const currentTab = useNavigationStore((state) => state.currentTab);
@@ -29,30 +28,21 @@ export const BottomNav: React.FC = () => {
   return (
     <nav
       id="sticky-mobile-bottom-nav"
-      style={{
-        transform: 'translateZ(0)',
-        willChange: 'transform',
-        backfaceVisibility: 'hidden',
-        background: 'color-mix(in srgb, var(--bg-surface) 86%, transparent)',
-        backdropFilter: 'blur(24px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-        borderColor: 'var(--border-glass)',
-        boxShadow: 'inset 0 1px 0 0 rgba(255, 255, 255, 0.18), 0 -12px 36px 0 var(--glass-shadow)',
-        paddingBottom: 'env(safe-area-inset-bottom, 12px)',
-      }}
-      className="lg:hidden fixed bottom-0 left-0 w-full z-50 border-t transition-colors duration-200"
       aria-label="Mobile Navigation"
+      dir="ltr"
+      style={{
+        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 0px)',
+        bottom: 'calc(1rem + env(safe-area-inset-bottom, 0px))',
+      }}
+      className="lg:hidden fixed inset-x-0 z-40 px-4 pointer-events-none flex justify-center"
     >
-      {/* Luminous Top Gradient Accent Line */}
       <div
-        className="absolute top-0 inset-x-0 h-[1.5px] pointer-events-none"
+        dir="ltr"
         style={{
-          background: 'linear-gradient(90deg, transparent, var(--border-glass), var(--accent-primary), var(--border-glass), transparent)',
-          opacity: 0.9,
+          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 1px 0 rgba(255, 255, 255, 0.2)',
         }}
-      />
-
-      <div className="flex items-center justify-around h-16 px-3 max-w-lg mx-auto relative">
+        className="pointer-events-auto flex items-center justify-center gap-3 px-3.5 py-2.5 rounded-full bg-white/10 dark:bg-white/10 backdrop-blur-md border border-white/20 dark:border-white/15"
+      >
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = currentTab === item.id;
@@ -63,44 +53,22 @@ export const BottomNav: React.FC = () => {
               id={`bottom-nav-${item.id}`}
               type="button"
               onClick={() => setCurrentTab(item.id as NavTab)}
-              className="flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-2xl transition-all relative cursor-pointer group active:scale-95"
-              style={{
-                color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)',
-              }}
+              aria-label={item.label}
+              className={`relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 cursor-pointer active:scale-90 ${
+                isActive
+                  ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/40 ring-2 ring-white/30 scale-105'
+                  : 'bg-black/20 hover:bg-white/15 text-white/70 hover:text-white border border-white/10'
+              }`}
             >
-              {/* Active Indicator Background Pill */}
-              <div
-                className="w-10 h-7 rounded-xl flex items-center justify-center transition-all mb-1"
-                style={{
-                  backgroundColor: isActive ? 'var(--bg-surface-elevated)' : 'transparent',
-                  border: isActive ? '1px solid var(--border-glass)' : '1px solid transparent',
-                  boxShadow: isActive ? '0 2px 10px var(--glass-shadow)' : 'none',
-                }}
-              >
-                <Icon
-                  className="w-4 h-4 transition-transform"
-                  style={{
-                    transform: isActive ? 'scale(1.1)' : 'scale(1)',
-                    color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                  }}
-                />
-              </div>
+              <Icon
+                className={`w-5 h-5 transition-transform duration-200 ${
+                  isActive ? 'scale-110' : 'scale-100'
+                }`}
+              />
 
-              <span
-                className="text-[10px] font-semibold tracking-tight truncate max-w-full"
-                style={{
-                  color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
-                }}
-              >
-                {item.label}
-              </span>
-
-              {/* Top Accent Dot on Active Tab */}
+              {/* Tiny indicator dot under active tab */}
               {isActive && (
-                <span
-                  className="absolute top-1 w-1 h-1 rounded-full animate-in fade-in zoom-in"
-                  style={{ backgroundColor: 'var(--accent-primary)' }}
-                />
+                <span className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-white shadow-sm" />
               )}
             </button>
           );

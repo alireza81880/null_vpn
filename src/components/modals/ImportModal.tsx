@@ -138,7 +138,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   return (
     <div
       id="import-modal-backdrop"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-in fade-in duration-200"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -151,7 +151,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           boxShadow: 'var(--glass-shadow)',
           color: 'var(--text-primary)',
         }}
-        className="w-full max-w-xl rounded-3xl border p-5 sm:p-7 shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 duration-200"
+        className="w-full max-w-xl rounded-3xl border p-5 sm:p-7 shadow-2xl relative overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[85vh] animate-in zoom-in-95 duration-200"
       >
         {/* Hidden native file input */}
         <input
@@ -250,7 +250,12 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto space-y-4 pr-0.5">
+          <div
+            className="flex-1 overflow-y-auto space-y-4 pr-0.5 pb-8 sm:pb-4"
+            style={{
+              paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))',
+            }}
+          >
             {/* 3 Distinct Liquid Buttons Bento Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {/* Button 1: Paste Clipboard */}

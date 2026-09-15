@@ -69,12 +69,13 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
 
   return (
     <div
+      dir="ltr"
       style={{
         transform: 'translateZ(0)',
         willChange: 'transform',
         backfaceVisibility: 'hidden',
       }}
-      className="w-full py-2 select-none"
+      className="w-full py-2 select-none text-left"
     >
       {/* Node Flow Track */}
       <div className="relative flex items-center justify-between gap-2 sm:gap-4 px-2">
@@ -99,16 +100,16 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
           >
             <Laptop className="w-6 h-6" />
           </div>
-          <div className="text-center min-w-0 max-w-[100px] sm:max-w-[140px]">
+          <div className="w-full max-w-[110px] sm:max-w-[130px] flex flex-col items-center overflow-hidden">
             <span
               style={{ color: 'var(--text-primary)' }}
-              className="text-[11px] font-bold block tracking-tight truncate"
+              className="w-full text-center text-[11px] font-bold tracking-tight truncate overflow-hidden text-ellipsis whitespace-nowrap block"
             >
               Local Client
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="text-[10px] font-mono block truncate"
+              className="w-full text-center text-[10px] font-mono tracking-tighter truncate overflow-hidden text-ellipsis whitespace-nowrap block"
               title={isConnected ? clientIp : '127.0.0.1'}
             >
               {isConnected ? clientIp : '127.0.0.1'}
@@ -272,17 +273,17 @@ export const ConnectionNode: React.FC<ConnectionNodeProps> = memo(({
           >
             <Globe className="w-6 h-6" />
           </div>
-          <div className="text-center min-w-0 max-w-[100px] sm:max-w-[140px]">
+          <div className="w-full max-w-[110px] sm:max-w-[130px] flex flex-col items-center overflow-hidden">
             <span
               style={{ color: 'var(--text-primary)' }}
-              className="text-[11px] font-bold block tracking-tight truncate"
+              className="w-full text-center text-[11px] font-bold tracking-tight truncate overflow-hidden text-ellipsis whitespace-nowrap block"
               title={tunnelName}
             >
               {tunnelName}
             </span>
             <span
               style={{ color: 'var(--text-muted)' }}
-              className="text-[10px] font-mono block truncate"
+              className="w-full text-center text-[10px] font-mono tracking-tighter truncate overflow-hidden text-ellipsis whitespace-nowrap block"
               title={endpoint}
             >
               {endpoint}

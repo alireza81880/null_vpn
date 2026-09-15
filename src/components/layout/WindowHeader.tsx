@@ -16,7 +16,9 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({ title }) => {
 
   return (
     <header
-      className="h-14 px-4 sm:px-6 flex items-center justify-between border-b select-none window-drag-region z-20 shrink-0"
+      id="app-window-header"
+      dir="ltr"
+      className="h-14 px-4 sm:px-6 flex items-center justify-between border-b select-none window-drag-region z-20 shrink-0 text-left"
       style={{
         backgroundColor: 'var(--bg-canvas)',
         borderColor: 'var(--border-subtle)',

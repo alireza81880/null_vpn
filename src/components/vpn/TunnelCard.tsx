@@ -16,20 +16,11 @@ import type { TunnelItem, TunnelProtocol } from '../../store/useTunnelStore';
 export interface TunnelCardProps {
   tunnel: TunnelItem;
   isActive: boolean;
+  latencyMs?: number | null;
   onSelect: (id: string) => void;
   onDelete?: (id: string) => void;
   onEdit?: (tunnel: TunnelItem) => void;
 }
-
-// Generate stable deterministic ping based on tunnel endpoint/id
-const getStablePing = (str: string): number => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash % 110) + 26; // Between 26ms and 135ms
-};
 
 // Protocol badge styles
 const PROTOCOL_CONFIG: Record<
@@ -74,17 +65,12 @@ const PROTOCOL_CONFIG: Record<
 };
 
 /**
- * TunnelCard (Swipeable Liquid Bento Card)
- * 
- * Performance & Architecture:
- * - Memoized component with atomic rendering isolation.
- * - Hardware acceleration via translateZ(0) to eliminate GPU paint thrashing during gestures.
- * - Swipeable Mobile Gestures (Left -> Delete, Right -> Edit) via Framer Motion.
- * - Dynamic theme adaptation using CSS variables.
+ * TunnelCard (Liquid Bento Card with Real-time Ping & Action Triggers)
  */
 export const TunnelCard: React.FC<TunnelCardProps> = memo(({
   tunnel,
   isActive,
+  latencyMs,
   onSelect,
   onDelete,
   onEdit,
@@ -96,18 +82,48 @@ export const TunnelCard: React.FC<TunnelCardProps> = memo(({
   const leftActionOpacity = useTransform(x, [10, 60], [0, 1]);
   const rightActionOpacity = useTransform(x, [-10, -60], [0, 1]);
 
-  const ping = useMemo(() => getStablePing(tunnel.id + tunnel.endpoint), [tunnel.id, tunnel.endpoint]);
-
-  // Ping dot color determination
+  // Real-time ping config:
+  // Green < 100ms, Yellow < 200ms, Red > 200ms, or checking indicator
   const pingConfig = useMemo(() => {
-    if (ping < 70) {
-      return { color: '#10b981', label: `${ping}ms`, textClass: 'text-emerald-400' };
+    if (latencyMs === undefined || latencyMs === null) {
+      return {
+        color: '#64748b',
+        label: 'Checking...',
+        textClass: 'text-slate-400',
+        bg: 'rgba(100, 116, 139, 0.15)',
+      };
     }
-    if (ping < 120) {
-      return { color: '#f59e0b', label: `${ping}ms`, textClass: 'text-amber-400' };
+    if (latencyMs < 0 || latencyMs >= 999) {
+      return {
+        color: '#ef4444',
+        label: 'Timeout',
+        textClass: 'text-rose-400',
+        bg: 'rgba(239, 68, 68, 0.15)',
+      };
     }
-    return { color: '#ef4444', label: `${ping}ms`, textClass: 'text-rose-400' };
-  }, [ping]);
+    if (latencyMs < 100) {
+      return {
+        color: '#10b981',
+        label: `${latencyMs}ms`,
+        textClass: 'text-emerald-400',
+        bg: 'rgba(16, 185, 129, 0.15)',
+      };
+    }
+    if (latencyMs < 200) {
+      return {
+        color: '#f59e0b',
+        label: `${latencyMs}ms`,
+        textClass: 'text-amber-400',
+        bg: 'rgba(245, 158, 11, 0.15)',
+      };
+    }
+    return {
+      color: '#ef4444',
+      label: `${latencyMs}ms`,
+      textClass: 'text-rose-400',
+      bg: 'rgba(239, 68, 68, 0.15)',
+    };
+  }, [latencyMs]);
 
   const proto = PROTOCOL_CONFIG[tunnel.protocol] || PROTOCOL_CONFIG.wireguard;
 
@@ -235,11 +251,12 @@ export const TunnelCard: React.FC<TunnelCardProps> = memo(({
             </div>
 
             {/* Title, Endpoint & Protocol Badge */}
-            <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1 overflow-hidden">
               <div className="flex items-center gap-2 mb-1 flex-wrap">
                 <h4
                   style={{ color: 'var(--text-primary)' }}
-                  className="text-sm font-bold tracking-tight truncate max-w-[180px] sm:max-w-xs"
+                  className="text-sm font-bold tracking-tight truncate w-full overflow-hidden"
+                  title={tunnel.name}
                 >
                   {tunnel.name}
                 </h4>
@@ -283,16 +300,16 @@ export const TunnelCard: React.FC<TunnelCardProps> = memo(({
             </div>
           </div>
 
-          {/* Right: Simulated Ping Dot & Desktop Action Buttons */}
-          <div className="flex items-center gap-3 shrink-0">
-            {/* Simulated Ping Dot & Latency */}
+          {/* Right: Real-time Ping Badge & Quick Action Buttons */}
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Real-time Ping Dot & Latency Badge */}
             <div
               style={{
-                backgroundColor: 'var(--bg-surface-elevated)',
-                borderColor: 'var(--border-subtle)',
+                backgroundColor: pingConfig.bg,
+                borderColor: pingConfig.color,
               }}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border"
-              title={`Simulated Latency: ${pingConfig.label}`}
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-full border transition-colors"
+              title={`Measured Latency: ${pingConfig.label}`}
             >
               <span
                 className="w-2 h-2 rounded-full shrink-0"
@@ -301,30 +318,32 @@ export const TunnelCard: React.FC<TunnelCardProps> = memo(({
                   boxShadow: `0 0 8px ${pingConfig.color}`,
                 }}
               />
-              <span className="text-[10px] font-mono font-medium text-[var(--text-secondary)]">
+              <span className={`text-[10px] font-mono font-medium ${pingConfig.textClass}`}>
                 {pingConfig.label}
               </span>
             </div>
 
-            {/* Active Checkmark */}
+            {/* Active Checkmark / Select Indicator */}
             {isActive ? (
               <div
                 style={{ color: 'var(--accent-primary)' }}
-                className="w-8 h-8 rounded-xl flex items-center justify-center"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0"
+                title="Active Tunnel"
               >
-                <CheckCircle2 className="w-5 h-5" />
+                <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
             ) : (
               <div
                 style={{ color: 'var(--text-muted)' }}
-                className="w-8 h-8 rounded-xl flex items-center justify-center opacity-40 group-hover:opacity-80 transition-opacity"
+                className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center opacity-40 group-hover:opacity-80 transition-opacity shrink-0"
+                title="Select Tunnel"
               >
-                <Circle className="w-4 h-4" />
+                <Circle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </div>
             )}
 
-            {/* Desktop Quick Actions (Visible on md+ screens or hover) */}
-            <div className="hidden sm:flex items-center gap-1 pl-1 border-l border-[var(--border-subtle)]">
+            {/* Quick Actions (Edit and Distinct Clickable Trash/Delete Button) */}
+            <div className="flex items-center gap-1 pl-1 border-l border-[var(--border-subtle)]">
               {onEdit && (
                 <button
                   type="button"
@@ -335,20 +354,21 @@ export const TunnelCard: React.FC<TunnelCardProps> = memo(({
                   title="Edit Configuration"
                   className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-[var(--accent-primary)] hover:bg-[var(--bg-surface-hover)] transition-colors cursor-pointer"
                 >
-                  <Edit3 className="w-4 h-4" />
+                  <Edit3 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                 </button>
               )}
               {onDelete && (
                 <button
                   type="button"
+                  id={`btn-delete-tunnel-${tunnel.id}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     onDelete(tunnel.id);
                   }}
                   title="Delete Configuration"
-                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg text-[var(--text-muted)] hover:text-rose-400 hover:bg-rose-500/15 transition-all cursor-pointer group/trash"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 group-hover/trash:scale-110 transition-transform" />
                 </button>
               )}
             </div>

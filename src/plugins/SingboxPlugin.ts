@@ -40,6 +40,7 @@ import type {
   VpnTelemetryPayload,
   VpnStartResult,
   VpnStopResult,
+  DiagnosticsResult,
 } from '../types/singbox';
 
 export interface StartEngineOptions {
@@ -66,6 +67,16 @@ export interface SingboxPlugin {
    * Queries the current operational state of the native mobile tunnel service.
    */
   getEngineStatus(): Promise<VpnStatusPayload>;
+
+  /**
+   * Runs network connectivity and TUN route verification test
+   */
+  runDiagnostics(): Promise<DiagnosticsResult>;
+
+  /**
+   * Measures TCP round-trip latency to a server endpoint
+   */
+  pingServer(options: { host: string; port: number }): Promise<{ success: boolean; latencyMs: number; error?: string }>;
 
   /**
    * Subscribes to tunnel state transitions ('connecting', 'connected', 'disconnected', 'error').

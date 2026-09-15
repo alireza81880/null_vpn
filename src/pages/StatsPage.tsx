@@ -8,7 +8,7 @@ const UptimeStat: React.FC<{ isConnected: boolean }> = React.memo(({ isConnected
   const { t } = useI18n();
 
   return (
-    <div className="glass-card p-4" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
+    <div dir="ltr" className="glass-card p-4 text-left" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
       <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--text-muted)' }}>
         <Clock className="w-4 h-4" />
         <span className="text-xs uppercase font-medium">{t('common.uptime')}</span>
@@ -26,7 +26,7 @@ const DownloadTotalStat: React.FC<{ isConnected: boolean }> = React.memo(({ isCo
   const { t } = useI18n();
 
   return (
-    <div className="glass-card p-4" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
+    <div dir="ltr" className="glass-card p-4 text-left" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
       <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--text-muted)' }}>
         <Database className="w-4 h-4 text-emerald-400" />
         <span className="text-xs uppercase font-medium">{t('telemetry.download')}</span>
@@ -44,7 +44,7 @@ const UploadTotalStat: React.FC<{ isConnected: boolean }> = React.memo(({ isConn
   const { t } = useI18n();
 
   return (
-    <div className="glass-card p-4" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
+    <div dir="ltr" className="glass-card p-4 text-left" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
       <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--text-muted)' }}>
         <Activity className="w-4 h-4 text-indigo-400" />
         <span className="text-xs uppercase font-medium">{t('telemetry.upload')}</span>
@@ -62,7 +62,7 @@ const HandshakeStat: React.FC<{ isConnected: boolean }> = React.memo(({ isConnec
   const { t } = useI18n();
 
   return (
-    <div className="glass-card p-4" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
+    <div dir="ltr" className="glass-card p-4 text-left" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
       <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--text-muted)' }}>
         <Radio className="w-4 h-4" />
         <span className="text-xs uppercase font-medium">{t('telemetry.handshake')}</span>
@@ -91,7 +91,7 @@ export const StatsPage: React.FC = () => {
       </div>
 
       {/* Metrics Row (Isolated micro-components) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div dir="ltr" className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-left">
         <UptimeStat isConnected={isConnected} />
         <DownloadTotalStat isConnected={isConnected} />
         <UploadTotalStat isConnected={isConnected} />
@@ -99,7 +99,7 @@ export const StatsPage: React.FC = () => {
       </div>
 
       {/* Throughput Graph */}
-      <div className="glass-card p-5" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
+      <div dir="ltr" className="glass-card p-5 text-left" style={{ backgroundColor: 'var(--bg-surface-glass)' }}>
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Zap className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />

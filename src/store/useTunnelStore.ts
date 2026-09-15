@@ -34,6 +34,10 @@ export interface TunnelItem {
 export interface TunnelStoreState {
   tunnels: TunnelItem[];
   activeTunnelId: string | null;
+  activeTunnel: TunnelItem | null;
+
+  // Selectors & Getters
+  getActiveTunnel: () => TunnelItem | null;
 
   // Primary Actions
   addTunnel: (rawText: string) => { success: boolean; tunnel?: TunnelItem; error?: string };
@@ -331,206 +335,287 @@ function parseShadowsocksUri(rawUri: string): { success: boolean; tunnel?: Omit<
 // ZUSTAND STORE
 // ============================================================================
 
-export const useTunnelStore = create<TunnelStoreState>((set, get) => ({
-  tunnels: loadPersistedTunnels(),
-  activeTunnelId: loadPersistedActiveTunnel(),
+export const useTunnelStore = create<TunnelStoreState>((set, get) => {
+  const initialTunnels = loadPersistedTunnels();
+  const initialActiveId = loadPersistedActiveTunnel();
+  const validActiveId =
+    initialActiveId && initialTunnels.some((t) => t.id === initialActiveId)
+      ? initialActiveId
+      : initialTunnels[0]?.id ?? null;
+  const initialActiveTunnel =
+    initialTunnels.find((t) => t.id === validActiveId) || initialTunnels[0] || null;
 
-  addTunnel: (rawText: string) => {
-    const text = rawText.trim();
-    if (!text) {
-      return { success: false, error: 'Input is empty. Please provide a config or URI.' };
-    }
+  return {
+    tunnels: initialTunnels,
+    activeTunnelId: validActiveId,
+    activeTunnel: initialActiveTunnel,
 
-    let parsedResult: { success: boolean; tunnel?: Omit<TunnelItem, 'id' | 'createdAt'>; error?: string };
+    getActiveTunnel: () => {
+      const { tunnels, activeTunnelId } = get();
+      return tunnels.find((t) => t.id === activeTunnelId) || tunnels[0] || null;
+    },
 
-    // 1. Detect WireGuard INI config
-    if (text.includes('[Interface]') || text.includes('[interface]') || text.includes('[Peer]') || text.includes('[peer]')) {
-      parsedResult = parseWireGuardConfig(text);
-    }
-    // 2. Detect VLESS URI
-    else if (text.toLowerCase().startsWith('vless://')) {
-      parsedResult = parseVlessUri(text);
-    }
-    // 3. Detect Trojan URI
-    else if (text.toLowerCase().startsWith('trojan://')) {
-      parsedResult = parseTrojanUri(text);
-    }
-    // 4. Detect VMess URI
-    else if (text.toLowerCase().startsWith('vmess://')) {
-      parsedResult = parseVmessUri(text);
-    }
-    // 5. Detect Shadowsocks URI
-    else if (text.toLowerCase().startsWith('ss://')) {
-      parsedResult = parseShadowsocksUri(text);
-    }
-    // Fallback: Generic WireGuard attempts
-    else if (text.includes('PrivateKey') || text.includes('Endpoint')) {
-      parsedResult = parseWireGuardConfig(text);
-    } else {
-      return {
-        success: false,
-        error: 'Unrecognized format. Supported: WireGuard (.conf), vless://, trojan://, vmess://, ss://',
+    addTunnel: (rawText: string) => {
+      const text = rawText.trim();
+      if (!text) {
+        return { success: false, error: 'Input is empty. Please provide a config or URI.' };
+      }
+
+      let parsedResult: { success: boolean; tunnel?: Omit<TunnelItem, 'id' | 'createdAt'>; error?: string };
+
+      // 1. Detect WireGuard INI config
+      if (text.includes('[Interface]') || text.includes('[interface]') || text.includes('[Peer]') || text.includes('[peer]')) {
+        parsedResult = parseWireGuardConfig(text);
+      }
+      // 2. Detect VLESS URI
+      else if (text.toLowerCase().startsWith('vless://')) {
+        parsedResult = parseVlessUri(text);
+      }
+      // 3. Detect Trojan URI
+      else if (text.toLowerCase().startsWith('trojan://')) {
+        parsedResult = parseTrojanUri(text);
+      }
+      // 4. Detect VMess URI
+      else if (text.toLowerCase().startsWith('vmess://')) {
+        parsedResult = parseVmessUri(text);
+      }
+      // 5. Detect Shadowsocks URI
+      else if (text.toLowerCase().startsWith('ss://')) {
+        parsedResult = parseShadowsocksUri(text);
+      }
+      // Fallback: Generic WireGuard attempts
+      else if (text.includes('PrivateKey') || text.includes('Endpoint')) {
+        parsedResult = parseWireGuardConfig(text);
+      } else {
+        return {
+          success: false,
+          error: 'Unrecognized format. Supported: WireGuard (.conf), vless://, trojan://, vmess://, ss://',
+        };
+      }
+
+      if (!parsedResult.success || !parsedResult.tunnel) {
+        return { success: false, error: parsedResult.error || 'Failed to parse tunnel configuration.' };
+      }
+
+      const newTunnel: TunnelItem = {
+        ...parsedResult.tunnel,
+        id: `tunnel-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        createdAt: Date.now(),
       };
-    }
 
-    if (!parsedResult.success || !parsedResult.tunnel) {
-      return { success: false, error: parsedResult.error || 'Failed to parse tunnel configuration.' };
-    }
+      const updated = [newTunnel, ...get().tunnels];
+      set({
+        tunnels: updated,
+        activeTunnelId: newTunnel.id,
+        activeTunnel: newTunnel,
+      });
 
-    const newTunnel: TunnelItem = {
-      ...parsedResult.tunnel,
-      id: `tunnel-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      createdAt: Date.now(),
-    };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_TUNNELS, JSON.stringify(updated));
+        localStorage.setItem(STORAGE_KEY_ACTIVE_TUNNEL, newTunnel.id);
+      }
 
-    const updated = [newTunnel, ...get().tunnels];
-    set({
-      tunnels: updated,
-      activeTunnelId: newTunnel.id,
-    });
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_TUNNELS, JSON.stringify(updated));
-      localStorage.setItem(STORAGE_KEY_ACTIVE_TUNNEL, newTunnel.id);
-    }
-
-    // Synchronize WireGuard config into useAppStore so the main connection engine can use it
-    if (newTunnel.protocol === 'wireguard' && newTunnel.wireguard) {
-      try {
-        useAppStore.getState().addConfig({
-          name: newTunnel.name,
-          endpoint: newTunnel.endpoint,
-          interface: {
-            privateKey: newTunnel.wireguard.privateKey,
-            address: newTunnel.wireguard.address,
-            dns: newTunnel.wireguard.dns,
-            mtu: newTunnel.wireguard.mtu,
-          },
-          peer: {
-            publicKey: newTunnel.wireguard.publicKey,
+      // Synchronize WireGuard config into useAppStore so the main connection engine can use it
+      if (newTunnel.protocol === 'wireguard' && newTunnel.wireguard) {
+        try {
+          useAppStore.getState().addConfig({
+            id: newTunnel.id,
+            name: newTunnel.name,
             endpoint: newTunnel.endpoint,
-            allowedIPs: newTunnel.wireguard.allowedIPs,
-            persistentKeepalive: newTunnel.wireguard.persistentKeepalive,
-          },
-          rawConfig: newTunnel.rawConfig,
-        });
-      } catch (err) {
-        console.warn('Failed to mirror WireGuard configuration to AppStore:', err);
-      }
-    } else {
-      // Mirror non-WireGuard proxy configs into useAppStore as well with standard interface mock
-      try {
-        useAppStore.getState().addConfig({
-          name: newTunnel.name,
-          endpoint: newTunnel.endpoint,
-          interface: {
-            address: '10.14.0.2/32',
-            dns: '1.1.1.1',
-          },
-          peer: {
-            endpoint: newTunnel.endpoint,
-            allowedIPs: '0.0.0.0/0',
-          },
-          rawConfig: newTunnel.rawConfig,
-        });
-      } catch (err) {
-        console.warn('Failed to mirror proxy configuration to AppStore:', err);
-      }
-    }
-
-    return { success: true, tunnel: newTunnel };
-  },
-
-  addParsedTunnel: (item) => {
-    const newTunnel: TunnelItem = {
-      ...item,
-      id: `tunnel-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      createdAt: Date.now(),
-    };
-    const updated = [newTunnel, ...get().tunnels];
-    set({ tunnels: updated, activeTunnelId: newTunnel.id });
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_TUNNELS, JSON.stringify(updated));
-      localStorage.setItem(STORAGE_KEY_ACTIVE_TUNNEL, newTunnel.id);
-    }
-
-    return newTunnel;
-  },
-
-  updateTunnel: (id: string, updates: Partial<TunnelItem>) => {
-    const updated = get().tunnels.map((t) => (t.id === id ? { ...t, ...updates } : t));
-    set({ tunnels: updated });
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_TUNNELS, JSON.stringify(updated));
-    }
-  },
-
-  removeTunnel: (id: string) => {
-    const remaining = get().tunnels.filter((t) => t.id !== id);
-    const activeId = get().activeTunnelId === id ? (remaining[0]?.id ?? null) : get().activeTunnelId;
-    set({ tunnels: remaining, activeTunnelId: activeId });
-
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_TUNNELS, JSON.stringify(remaining));
-      if (activeId) {
-        localStorage.setItem(STORAGE_KEY_ACTIVE_TUNNEL, activeId);
-      } else {
-        localStorage.removeItem(STORAGE_KEY_ACTIVE_TUNNEL);
-      }
-    }
-  },
-
-  setActiveTunnel: (id: string | null) => {
-    set({ activeTunnelId: id });
-    if (typeof window !== 'undefined') {
-      if (id) {
-        localStorage.setItem(STORAGE_KEY_ACTIVE_TUNNEL, id);
-      } else {
-        localStorage.removeItem(STORAGE_KEY_ACTIVE_TUNNEL);
-      }
-    }
-
-    // Mirror to useAppStore activeConfigId
-    if (id) {
-      const selected = get().tunnels.find((t) => t.id === id);
-      if (selected) {
-        const appConfigs = useAppStore.getState().configs;
-        const matchingConfig = appConfigs.find(
-          (c) => c.id === id || c.name === selected.name || c.endpoint === selected.endpoint
-        );
-        if (matchingConfig) {
-          useAppStore.getState().setActiveConfigId(matchingConfig.id);
-        } else {
-          // If not in appStore, insert it so dashboard can connect
-          const addedId = useAppStore.getState().addConfig({
-            name: selected.name,
-            endpoint: selected.endpoint,
             interface: {
-              privateKey: selected.wireguard?.privateKey,
-              address: selected.wireguard?.address || '10.14.0.2/32',
-              dns: selected.wireguard?.dns || '1.1.1.1',
-              mtu: selected.wireguard?.mtu,
+              privateKey: newTunnel.wireguard.privateKey,
+              address: newTunnel.wireguard.address,
+              dns: newTunnel.wireguard.dns,
+              mtu: newTunnel.wireguard.mtu,
             },
             peer: {
-              publicKey: selected.wireguard?.publicKey,
-              endpoint: selected.endpoint,
-              allowedIPs: selected.wireguard?.allowedIPs || '0.0.0.0/0',
-              persistentKeepalive: selected.wireguard?.persistentKeepalive,
+              publicKey: newTunnel.wireguard.publicKey,
+              endpoint: newTunnel.endpoint,
+              allowedIPs: newTunnel.wireguard.allowedIPs,
+              persistentKeepalive: newTunnel.wireguard.persistentKeepalive,
             },
-            rawConfig: selected.rawConfig,
+            rawConfig: newTunnel.rawConfig,
           });
-          useAppStore.getState().setActiveConfigId(addedId);
+        } catch (err) {
+          console.warn('Failed to mirror WireGuard configuration to AppStore:', err);
+        }
+      } else {
+        // Mirror non-WireGuard proxy configs into useAppStore as well with standard interface mock
+        try {
+          useAppStore.getState().addConfig({
+            id: newTunnel.id,
+            name: newTunnel.name,
+            endpoint: newTunnel.endpoint,
+            interface: {
+              address: '10.14.0.2/32',
+              dns: '1.1.1.1',
+            },
+            peer: {
+              endpoint: newTunnel.endpoint,
+              allowedIPs: '0.0.0.0/0',
+            },
+            rawConfig: newTunnel.rawConfig,
+          });
+        } catch (err) {
+          console.warn('Failed to mirror proxy configuration to AppStore:', err);
         }
       }
-    }
-  },
 
-  clearTunnels: () => {
-    set({ tunnels: [], activeTunnelId: null });
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(STORAGE_KEY_TUNNELS);
-      localStorage.removeItem(STORAGE_KEY_ACTIVE_TUNNEL);
-    }
-  },
-}));
+      return { success: true, tunnel: newTunnel };
+    },
+
+    addParsedTunnel: (item) => {
+      const newTunnel: TunnelItem = {
+        ...item,
+        id: `tunnel-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        createdAt: Date.now(),
+      };
+      const updated = [newTunnel, ...get().tunnels];
+      set({
+        tunnels: updated,
+        activeTunnelId: newTunnel.id,
+        activeTunnel: newTunnel,
+      });
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_TUNNELS, JSON.stringify(updated));
+        localStorage.setItem(STORAGE_KEY_ACTIVE_TUNNEL, newTunnel.id);
+      }
+
+      return newTunnel;
+    },
+
+    updateTunnel: (id: string, updates: Partial<TunnelItem>) => {
+      const prevTunnel = get().tunnels.find((t) => t.id === id);
+      const updated = get().tunnels.map((t) => (t.id === id ? { ...t, ...updates } : t));
+
+      // If updated tunnel is the active tunnel, patch activeTunnel as well
+      const currentActiveId = get().activeTunnelId;
+      const isEditingActive = currentActiveId === id || get().activeTunnel?.id === id;
+      const nextActiveTunnel = isEditingActive
+        ? updated.find((t) => t.id === id) || null
+        : get().activeTunnel;
+
+      set({
+        tunnels: updated,
+        activeTunnel: nextActiveTunnel,
+      });
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_TUNNELS, JSON.stringify(updated));
+      }
+
+      // Mirror to useAppStore configs so Dashboard and VPN engines reflect changes immediately
+      const appState = useAppStore.getState();
+      const matchingAppConfig = appState.configs.find(
+        (c) => c.id === id || (prevTunnel && (c.name === prevTunnel.name || c.endpoint === prevTunnel.endpoint))
+      );
+      if (matchingAppConfig) {
+        appState.updateConfig(matchingAppConfig.id, {
+          ...(updates.name ? { name: updates.name } : {}),
+          ...(updates.endpoint ? { endpoint: updates.endpoint } : {}),
+        });
+      }
+    },
+
+    removeTunnel: (id: string) => {
+      const victim = get().tunnels.find((t) => t.id === id);
+      const remaining = get().tunnels.filter((t) => t.id !== id);
+      const activeId = get().activeTunnelId === id ? (remaining[0]?.id ?? null) : get().activeTunnelId;
+      const nextActiveTunnel = remaining.find((t) => t.id === activeId) || remaining[0] || null;
+
+      set({
+        tunnels: remaining,
+        activeTunnelId: activeId,
+        activeTunnel: nextActiveTunnel,
+      });
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_TUNNELS, JSON.stringify(remaining));
+        if (activeId) {
+          localStorage.setItem(STORAGE_KEY_ACTIVE_TUNNEL, activeId);
+        } else {
+          localStorage.removeItem(STORAGE_KEY_ACTIVE_TUNNEL);
+        }
+      }
+
+      // Mirror deletion to useAppStore (configs array and activeConfigId)
+      const appState = useAppStore.getState();
+      const matchingAppConfig = appState.configs.find(
+        (c) => c.id === id || (victim && (c.name === victim.name || c.endpoint === victim.endpoint))
+      );
+      if (matchingAppConfig) {
+        appState.removeConfig(matchingAppConfig.id);
+      }
+    },
+
+    setActiveTunnel: (id: string | null) => {
+      const selected = get().tunnels.find((t) => t.id === id) || null;
+      set({
+        activeTunnelId: id,
+        activeTunnel: selected,
+      });
+
+      if (typeof window !== 'undefined') {
+        if (id) {
+          localStorage.setItem(STORAGE_KEY_ACTIVE_TUNNEL, id);
+        } else {
+          localStorage.removeItem(STORAGE_KEY_ACTIVE_TUNNEL);
+        }
+      }
+
+      // Mirror to useAppStore activeConfigId
+      if (id) {
+        if (selected) {
+          const appConfigs = useAppStore.getState().configs;
+          const matchingConfig = appConfigs.find(
+            (c) => c.id === id || c.name === selected.name || c.endpoint === selected.endpoint
+          );
+          if (matchingConfig) {
+            useAppStore.getState().setActiveConfigId(matchingConfig.id);
+          } else {
+            // If not in appStore, insert it so dashboard can connect
+            const addedId = useAppStore.getState().addConfig({
+              id: selected.id,
+              name: selected.name,
+              endpoint: selected.endpoint,
+              interface: {
+                privateKey: selected.wireguard?.privateKey,
+                address: selected.wireguard?.address || '10.14.0.2/32',
+                dns: selected.wireguard?.dns || '1.1.1.1',
+                mtu: selected.wireguard?.mtu,
+              },
+              peer: {
+                publicKey: selected.wireguard?.publicKey,
+                endpoint: selected.endpoint,
+                allowedIPs: selected.wireguard?.allowedIPs || '0.0.0.0/0',
+                persistentKeepalive: selected.wireguard?.persistentKeepalive,
+              },
+              rawConfig: selected.rawConfig,
+            });
+            useAppStore.getState().setActiveConfigId(addedId);
+          }
+        }
+      }
+    },
+
+    clearTunnels: () => {
+      set({ tunnels: [], activeTunnelId: null, activeTunnel: null });
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(STORAGE_KEY_TUNNELS);
+        localStorage.removeItem(STORAGE_KEY_ACTIVE_TUNNEL);
+      }
+    },
+  };
+});
+
+/**
+ * Derived selector hook: Dynamically resolves active tunnel from tunnels array
+ * guarantees instant reactivity when a tunnel name or endpoint is edited.
+ */
+export const useActiveTunnel = (): TunnelItem | null => {
+  return useTunnelStore((state) => {
+    return state.tunnels.find((t) => t.id === state.activeTunnelId) || state.activeTunnel || state.tunnels[0] || null;
+  });
+};
+

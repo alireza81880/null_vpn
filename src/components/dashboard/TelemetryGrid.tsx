@@ -36,6 +36,7 @@ export const MetricCardShell: React.FC<MetricCardShellProps> = memo(
     return (
       <div
         id={id}
+        dir="ltr"
         style={{
           transform: 'translateZ(0)',
           willChange: 'transform, opacity',
@@ -45,7 +46,7 @@ export const MetricCardShell: React.FC<MetricCardShellProps> = memo(
           boxShadow: 'var(--glass-shadow)',
           color: 'var(--text-primary)',
         }}
-        className="glass-card p-4 sm:p-5 rounded-2xl flex flex-col justify-between relative overflow-hidden group hover:border-[var(--border-accent)] border backdrop-blur-2xl transition-colors duration-200"
+        className="glass-card p-4 sm:p-5 rounded-2xl flex flex-col justify-between relative overflow-hidden group hover:border-[var(--border-accent)] border backdrop-blur-2xl transition-colors duration-200 text-left"
       >
         {/* Top Glow Accent Strip */}
         <div
@@ -266,7 +267,7 @@ HandshakeMetricNode.displayName = 'HandshakeMetricNode';
 
 export const TelemetryGrid: React.FC = memo(() => {
   return (
-    <div className="w-full mt-4">
+    <div dir="ltr" className="w-full mt-4 text-left">
       <div className="grid grid-cols-12 gap-3 sm:gap-4 md:gap-5">
         <div className="col-span-12 sm:col-span-6 lg:col-span-3">
           <DownloadMetricNode />

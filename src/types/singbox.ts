@@ -91,6 +91,16 @@ export interface SingBoxConfigObject {
 
 export type SingBoxConfigInput = SingBoxConfigObject | string;
 
+export interface DiagnosticsResult {
+  success: boolean;
+  active: boolean;
+  latencyMs?: number;
+  ip?: string;
+  interfaceName?: string;
+  message: string;
+  timestamp: number;
+}
+
 /**
  * Window VPN Engine Interface exposed via Electron contextBridge
  */
@@ -98,6 +108,8 @@ export interface VpnEngineApi {
   start: (config: SingBoxConfigInput) => Promise<VpnStartResult>;
   stop: () => Promise<VpnStopResult>;
   getStatus: () => Promise<VpnStatusPayload>;
+  runDiagnostics: () => Promise<DiagnosticsResult>;
+  pingServer?: (ip: string, port: number) => Promise<{ success: boolean; latencyMs: number; error?: string }>;
   onStatusChange: (callback: (payload: VpnStatusPayload) => void) => () => void;
   onTelemetryUpdate: (callback: (telemetry: VpnTelemetryPayload) => void) => () => void;
 }
