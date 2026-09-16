@@ -22,23 +22,17 @@ import org.json.JSONObject;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 
-import io.nekohasekai.libbox.BridgeOptions;
-import io.nekohasekai.libbox.BridgeSession;
+import io.nekohasekai.libbox.BoxService;
 import io.nekohasekai.libbox.CommandServer;
 import io.nekohasekai.libbox.CommandServerHandler;
-import io.nekohasekai.libbox.ConnectionOwner;
 import io.nekohasekai.libbox.InterfaceUpdateListener;
 import io.nekohasekai.libbox.Libbox;
-import io.nekohasekai.libbox.LocalDNSTransport;
-import io.nekohasekai.libbox.NeighborUpdateListener;
 import io.nekohasekai.libbox.NetworkInterfaceIterator;
-import io.nekohasekai.libbox.OverrideOptions;
 import io.nekohasekai.libbox.PlatformInterface;
-import io.nekohasekai.libbox.PlatformUser;
 import io.nekohasekai.libbox.RoutePrefix;
 import io.nekohasekai.libbox.RoutePrefixIterator;
 import io.nekohasekai.libbox.SetupOptions;
-import io.nekohasekai.libbox.ShellSession;
+import io.nekohasekai.libbox.StringBox;
 import io.nekohasekai.libbox.StringIterator;
 import io.nekohasekai.libbox.SystemProxyStatus;
 import io.nekohasekai.libbox.TunOptions;
@@ -65,6 +59,7 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     private static volatile NullVpnService activeInstance = null;
 
     private ParcelFileDescriptor tunInterface = null;
+    private BoxService boxService = null;
     private CommandServer commandServer = null;
     private Handler telemetryHandler = null;
     private Runnable telemetryRunnable = null;
@@ -260,12 +255,19 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             // Step 2: Clean up previous tunnel if any
             if (commandServer != null) {
                 try {
-                    commandServer.closeService();
+                    commandServer.setService(null);
                 } catch (Exception ignored) {}
                 try {
                     commandServer.close();
                 } catch (Exception ignored) {}
                 commandServer = null;
+            }
+
+            if (boxService != null) {
+                try {
+                    boxService.close();
+                } catch (Exception ignored) {}
+                boxService = null;
             }
 
             if (tunInterface != null) {
@@ -285,16 +287,17 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             Libbox.setup(setupOptions);
             Log.i(TAG, "Libbox.setup completed successfully");
 
-            // Step 4: Create and start the CommandServer
-            // The sing-box core will invoke openTun(TunOptions) via PlatformInterface when starting the inbound!
-            commandServer = Libbox.newCommandServer(this, this);
+            // Step 4: Create and start CommandServer
+            commandServer = Libbox.newCommandServer(this, 300);
             commandServer.start();
             Log.i(TAG, "Libbox CommandServer started");
 
-            // Step 5: Start the core service with the JSON config
-            OverrideOptions overrideOptions = new OverrideOptions();
-            commandServer.startOrReloadService(configJson, overrideOptions);
-            Log.i(TAG, "sing-box core startOrReloadService called successfully");
+            // Step 5: Start the core BoxService with JSON config and PlatformInterface
+            // The sing-box core will invoke openTun(TunOptions) via PlatformInterface when initializing TUN inbound!
+            boxService = Libbox.newService(configJson, this);
+            commandServer.setService(boxService);
+            boxService.start();
+            Log.i(TAG, "sing-box core BoxService started successfully");
 
             // Step 6: Mark status as connected and start telemetry reporting
             currentStatus = "connected";
@@ -334,9 +337,9 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
 
         if (commandServer != null) {
             try {
-                commandServer.closeService();
+                commandServer.setService(null);
             } catch (Exception e) {
-                Log.w(TAG, "Error closing libbox service: " + e.getMessage());
+                Log.w(TAG, "Error detaching service from command server: " + e.getMessage());
             }
             try {
                 commandServer.close();
@@ -344,6 +347,15 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                 Log.w(TAG, "Error closing command server: " + e.getMessage());
             }
             commandServer = null;
+        }
+
+        if (boxService != null) {
+            try {
+                boxService.close();
+            } catch (Exception e) {
+                Log.w(TAG, "Error closing BoxService: " + e.getMessage());
+            }
+            boxService = null;
         }
 
         if (tunInterface != null) {
@@ -365,8 +377,24 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     }
 
     // ==========================================
-    // PlatformInterface Implementation (sing-box)
+    // PlatformInterface Implementation (sing-box v1.10.7)
     // ==========================================
+
+    @Override
+    public boolean usePlatformAutoDetectInterfaceControl() {
+        return true;
+    }
+
+    @Override
+    public void autoDetectInterfaceControl(int fd) throws Exception {
+        // Protect upstream sockets created by sing-box to prevent VPN loops
+        boolean success = protect(fd);
+        if (!success) {
+            Log.w(TAG, "autoDetectInterfaceControl: VpnService.protect(fd=" + fd + ") failed");
+        } else {
+            Log.d(TAG, "autoDetectInterfaceControl: VpnService.protect(fd=" + fd + ") succeeded");
+        }
+    }
 
     @Override
     public int openTun(TunOptions options) throws Exception {
@@ -433,17 +461,16 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
         }
 
         // Configure DNS servers
-        StringIterator dnsIter = options.getDNSServerAddress();
         boolean hasDns = false;
-        while (dnsIter != null && dnsIter.hasNext()) {
-            String dns = dnsIter.next();
-            if (dns != null && !dns.trim().isEmpty()) {
-                try {
-                    builder.addDnsServer(dns.trim());
-                    hasDns = true;
-                    Log.d(TAG, "openTun: addDnsServer " + dns.trim());
-                } catch (Exception ignored) {}
+        try {
+            StringBox dnsBox = options.getDNSServerAddress();
+            if (dnsBox != null && dnsBox.getValue() != null && !dnsBox.getValue().trim().isEmpty()) {
+                builder.addDnsServer(dnsBox.getValue().trim());
+                hasDns = true;
+                Log.d(TAG, "openTun: addDnsServer from options: " + dnsBox.getValue().trim());
             }
+        } catch (Exception e) {
+            Log.d(TAG, "openTun: getDNSServerAddress: " + e.getMessage());
         }
         if (!hasDns) {
             builder.addDnsServer("172.19.0.1");
@@ -479,49 +506,54 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     }
 
     @Override
-    public void autoDetectInterfaceControl(int fd) throws Exception {
-        // Crucial: Protect upstream sockets created by sing-box to prevent VPN loops!
-        boolean success = protect(fd);
-        if (!success) {
-            Log.w(TAG, "autoDetectInterfaceControl: VpnService.protect(fd=" + fd + ") failed");
-        } else {
-            Log.d(TAG, "autoDetectInterfaceControl: VpnService.protect(fd=" + fd + ") succeeded");
+    public void writeLog(String message) {
+        Log.d(TAG, "sing-box: " + message);
+    }
+
+    @Override
+    public boolean useProcFS() {
+        return false;
+    }
+
+    @Override
+    public int findConnectionOwner(int ipProtocol, String sourceAddress, int sourcePort, String destinationAddress, int destinationPort) throws Exception {
+        return -1;
+    }
+
+    @Override
+    public String packageNameByUid(int uid) throws Exception {
+        try {
+            String[] packages = getPackageManager().getPackagesForUid(uid);
+            if (packages != null && packages.length > 0) {
+                return packages[0];
+            }
+        } catch (Exception ignored) {}
+        return "";
+    }
+
+    @Override
+    public int uidByPackageName(String packageName) throws Exception {
+        try {
+            return getPackageManager().getPackageUid(packageName, 0);
+        } catch (Exception e) {
+            return -1;
         }
     }
 
     @Override
-    public boolean usePlatformAutoDetectInterfaceControl() {
-        return true;
+    public boolean usePlatformDefaultInterfaceMonitor() {
+        return false;
     }
 
     @Override
-    public void cancelNotification(String tag, int id) {
-        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (manager != null) {
-            manager.cancel(tag, id);
-        }
-    }
+    public void startDefaultInterfaceMonitor(InterfaceUpdateListener listener) throws Exception {}
 
     @Override
-    public void checkPlatformShell() {}
+    public void closeDefaultInterfaceMonitor(InterfaceUpdateListener listener) throws Exception {}
 
     @Override
-    public void clearDNSCache() {}
-
-    @Override
-    public void closeDefaultInterfaceMonitor(InterfaceUpdateListener listener) {}
-
-    @Override
-    public void closeNeighborMonitor(NeighborUpdateListener listener) {}
-
-    @Override
-    public BridgeSession createBridge(BridgeOptions options) {
-        return null;
-    }
-
-    @Override
-    public ConnectionOwner findConnectionOwner(int ipVersion, String sourceAddress, int sourcePort, String destinationAddress, int destinationPort) throws Exception {
-        return null;
+    public boolean usePlatformInterfaceGetter() {
+        return false;
     }
 
     @Override
@@ -530,33 +562,13 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     }
 
     @Override
-    public boolean includeAllNetworks() {
+    public boolean underNetworkExtension() {
         return false;
     }
 
     @Override
-    public LocalDNSTransport localDNSTransport() {
-        return null;
-    }
-
-    @Override
-    public String lookupSFTPServer() {
-        return "";
-    }
-
-    @Override
-    public PlatformUser lookupUser(String name) {
-        return null;
-    }
-
-    @Override
-    public ShellSession openShellSession(PlatformUser user, String shell, StringIterator env, String path, int width, int height) {
-        return null;
-    }
-
-    @Override
-    public String readSystemSSHHostKey() {
-        return "";
+    public boolean includeAllNetworks() {
+        return false;
     }
 
     @Override
@@ -565,53 +577,28 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     }
 
     @Override
-    public void registerMyInterface(String name) {}
+    public void clearDNSCache() {}
 
     @Override
-    public void sendNotification(io.nekohasekai.libbox.Notification notification) {
+    public void sendNotification(io.nekohasekai.libbox.Notification notification) throws Exception {
         if (notification != null) {
             Log.i(TAG, "libbox notification: " + notification.getTitle() + " - " + notification.getBody());
         }
     }
 
-    @Override
-    public void startDefaultInterfaceMonitor(InterfaceUpdateListener listener) throws Exception {}
-
-    @Override
-    public void startNeighborMonitor(NeighborUpdateListener listener) throws Exception {}
-
-    @Override
-    public String tailscaleHostname() {
-        return "";
-    }
-
-    @Override
-    public boolean underNetworkExtension() {
-        return false;
-    }
-
-    @Override
-    public boolean usePlatformBridge() {
-        return false;
-    }
-
-    @Override
-    public boolean usePlatformShell() {
-        return false;
-    }
-
-    @Override
-    public boolean useProcFS() {
-        return false;
-    }
-
     // ==========================================
-    // CommandServerHandler Implementation (sing-box)
+    // CommandServerHandler Implementation (sing-box v1.10.7)
     // ==========================================
 
     @Override
-    public int connectSSHAgent() throws Exception {
-        return -1;
+    public void serviceReload() throws Exception {
+        Log.i(TAG, "CommandServerHandler: serviceReload requested");
+    }
+
+    @Override
+    public void postServiceClose() {
+        Log.i(TAG, "CommandServerHandler: postServiceClose requested by core");
+        stopVpn();
     }
 
     @Override
@@ -620,28 +607,7 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     }
 
     @Override
-    public void serviceReload() throws Exception {
-        Log.i(TAG, "CommandServerHandler: serviceReload requested");
-    }
-
-    @Override
-    public void serviceStop() throws Exception {
-        Log.i(TAG, "CommandServerHandler: serviceStop requested by core");
-        stopVpn();
-    }
-
-    @Override
-    public void setSystemProxyEnabled(boolean enabled) {}
-
-    @Override
-    public void triggerNativeCrash() {
-        Log.e(TAG, "CommandServerHandler: triggerNativeCrash requested");
-    }
-
-    @Override
-    public void writeDebugMessage(String message) {
-        Log.d(TAG, "sing-box: " + message);
-    }
+    public void setSystemProxyEnabled(boolean isEnabled) throws Exception {}
 
     // ==========================================
     // Telemetry and Health Checks
