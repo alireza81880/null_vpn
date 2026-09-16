@@ -644,12 +644,15 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                 totalRx += rxSpeed;
                 totalTx += txSpeed;
 
+                final long snapshotRxSpeed = rxSpeed;
+                final long snapshotTxSpeed = txSpeed;
+
                 new Thread(() -> {
                     long pingResult = pingServer(currentServerHost, currentServerPort);
                     int latency = pingResult > 0 ? (int) pingResult : 28;
 
-                    long finalRxSpeed = rxSpeed > 0 ? rxSpeed : 64L;
-                    long finalTxSpeed = txSpeed > 0 ? txSpeed : 32L;
+                    long finalRxSpeed = snapshotRxSpeed > 0 ? snapshotRxSpeed : 64L;
+                    long finalTxSpeed = snapshotTxSpeed > 0 ? snapshotTxSpeed : 32L;
 
                     if (eventListener != null && "connected".equals(currentStatus)) {
                         eventListener.onTelemetry(
