@@ -141,14 +141,44 @@ export function buildUniversalSingBoxConfig(
         ? {
             enabled: true,
             server_name: tunnel.sni || host,
+            insecure: tunnel.insecure,
           }
         : undefined,
       transport:
         tunnel.type === 'ws'
-          ? {
-              type: 'ws',
-              path: tunnel.path || '/',
-            }
+          ? (() => {
+              let wsPath = tunnel.path || '/';
+              let maxEarlyData = tunnel.maxEarlyData;
+              let earlyDataHeaderName = tunnel.earlyDataHeaderName;
+
+              if (wsPath.includes('?')) {
+                const [basePath, search] = wsPath.split('?');
+                const searchParams = new URLSearchParams(search);
+                const edVal = searchParams.get('ed');
+                if (edVal) {
+                  const parsedEd = parseInt(edVal, 10);
+                  if (!isNaN(parsedEd)) {
+                    maxEarlyData = maxEarlyData ?? parsedEd;
+                    earlyDataHeaderName = earlyDataHeaderName ?? 'Sec-WebSocket-Protocol';
+                  }
+                  searchParams.delete('ed');
+                }
+                const remainingSearch = searchParams.toString();
+                wsPath = remainingSearch ? `${basePath}?${remainingSearch}` : (basePath || '/');
+              }
+
+              if (maxEarlyData && !earlyDataHeaderName) {
+                earlyDataHeaderName = 'Sec-WebSocket-Protocol';
+              }
+
+              return {
+                type: 'ws',
+                path: wsPath,
+                headers: tunnel.wsHost ? { Host: tunnel.wsHost } : undefined,
+                max_early_data: maxEarlyData,
+                early_data_header_name: maxEarlyData ? (earlyDataHeaderName || 'Sec-WebSocket-Protocol') : undefined,
+              };
+            })()
           : undefined,
     };
   } else if (protocol === 'trojan' && isTunnelItem) {

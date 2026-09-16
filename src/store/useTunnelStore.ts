@@ -26,6 +26,10 @@ export interface TunnelItem {
   type?: string;
   flow?: string;
   path?: string;
+  insecure?: boolean;
+  wsHost?: string;
+  maxEarlyData?: number;
+  earlyDataHeaderName?: string;
   wireguard?: WireguardParams;
   rawConfig: string;
   createdAt: number;
@@ -185,7 +189,39 @@ function parseVlessUri(rawUri: string): { success: boolean; tunnel?: Omit<Tunnel
     const security = params.get('security') || 'tls';
     const sni = params.get('sni') || host;
     const flow = params.get('flow') || undefined;
-    const path = params.get('path') || undefined;
+    const rawPath = params.get('path') || undefined;
+    let cleanPath = rawPath;
+    let maxEarlyData: number | undefined = undefined;
+    let earlyDataHeaderName: string | undefined = undefined;
+
+    if (rawPath) {
+      if (rawPath.includes('?')) {
+        const [basePath, search] = rawPath.split('?');
+        const searchParams = new URLSearchParams(search);
+        const edVal = searchParams.get('ed');
+        if (edVal) {
+          const parsedEd = parseInt(edVal, 10);
+          if (!isNaN(parsedEd)) {
+            maxEarlyData = parsedEd;
+            earlyDataHeaderName = 'Sec-WebSocket-Protocol';
+          }
+          searchParams.delete('ed');
+        }
+        const remainingSearch = searchParams.toString();
+        cleanPath = remainingSearch ? `${basePath}?${remainingSearch}` : basePath;
+      }
+    }
+
+    if (maxEarlyData === undefined && params.get('ed')) {
+      const parsedEd = parseInt(params.get('ed')!, 10);
+      if (!isNaN(parsedEd)) {
+        maxEarlyData = parsedEd;
+        earlyDataHeaderName = 'Sec-WebSocket-Protocol';
+      }
+    }
+
+    const insecure = params.get('allowInsecure') === '1';
+    const wsHost = params.get('host') || undefined;
 
     return {
       success: true,
@@ -200,7 +236,11 @@ function parseVlessUri(rawUri: string): { success: boolean; tunnel?: Omit<Tunnel
         sni,
         type,
         flow,
-        path,
+        path: cleanPath,
+        insecure,
+        wsHost,
+        maxEarlyData,
+        earlyDataHeaderName,
         rawConfig: rawUri.trim(),
       },
     };

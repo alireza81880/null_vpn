@@ -47,6 +47,7 @@ export interface SingBoxOutbound {
   tls?: {
     enabled?: boolean;
     server_name?: string;
+    insecure?: boolean;
     reality?: {
       enabled?: boolean;
       public_key?: string;
@@ -57,6 +58,8 @@ export interface SingBoxOutbound {
     type?: string;
     path?: string;
     headers?: Record<string, string>;
+    max_early_data?: number;
+    early_data_header_name?: string;
   };
   network?: string;
   system_interface?: boolean;
