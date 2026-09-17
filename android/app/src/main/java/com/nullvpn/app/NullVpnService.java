@@ -420,11 +420,13 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
         }
 
         // Configure IPv6 addresses
+        boolean hasIpv6 = false;
         RoutePrefixIterator inet6 = options.getInet6Address();
         while (inet6 != null && inet6.hasNext()) {
             RoutePrefix prefix = inet6.next();
             try {
                 builder.addAddress(prefix.address(), prefix.prefix());
+                hasIpv6 = true;
                 Log.d(TAG, "openTun: addAddress IPv6 " + prefix.address() + "/" + prefix.prefix());
             } catch (Exception e) {
                 Log.w(TAG, "openTun: IPv6 address rejected by kernel: " + e.getMessage());
@@ -434,10 +436,12 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
         // Configure Routing: Default routes or specific routes
         if (options.getAutoRoute()) {
             builder.addRoute("0.0.0.0", 0);
-            try {
-                builder.addRoute("::", 0);
-            } catch (Exception e) {
-                Log.w(TAG, "openTun: IPv6 default route rejected: " + e.getMessage());
+            if (hasIpv6) {
+                try {
+                    builder.addRoute("::", 0);
+                } catch (Exception e) {
+                    Log.w(TAG, "openTun: IPv6 default route rejected: " + e.getMessage());
+                }
             }
         } else {
             RoutePrefixIterator routes4 = options.getInet4RouteAddress();

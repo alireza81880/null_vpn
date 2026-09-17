@@ -262,7 +262,6 @@ export function buildUniversalSingBoxConfig(
         tag: 'tun-in',
         interface_name: isMobile ? 'tun0' : 'null-vpn0',
         inet4_address: '172.19.0.1/30',
-        inet6_address: 'fdfe:dcba:9876::1/126',
         mtu: 1500,
         auto_route: true,
         strict_route: false,
