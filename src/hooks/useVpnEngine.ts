@@ -24,7 +24,8 @@ import { useAppStore } from '../store/useAppStore';
 import { useTunnelStore } from '../store/useTunnelStore';
 import { CapacitorSingbox } from '../plugins/SingboxPlugin';
 import { runNetworkDiagnostics } from '../utils/networkDiagnostics';
-import { buildUniversalSingBoxConfig, validateSingBoxConfig } from '../utils/singboxConfig';
+import { buildUniversalSingBoxConfig } from '../config/SingboxConfigBuilder';
+import { validateSingBoxConfig } from '../config/ConfigValidator';
 import type {
   SingBoxConfigInput,
   SingBoxConfigObject,

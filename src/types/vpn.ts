@@ -18,9 +18,11 @@ export type ThemeId =
 
 export interface WireguardPeer {
   publicKey?: string;
+  preSharedKey?: string;
   allowedIPs?: string;
   endpoint: string;
   persistentKeepalive?: number;
+  reserved?: number[];
 }
 
 export interface WireguardInterface {
@@ -49,4 +51,48 @@ export interface SessionStats {
   lastHandshake: number;
   sessionUptime: string;
   connectedSince: number | null;
+}
+
+export type TunnelProtocol = 'wireguard' | 'vless' | 'trojan' | 'vmess' | 'shadowsocks';
+
+export interface WireguardParams {
+  address?: string;
+  dns?: string;
+  privateKey?: string;
+  publicKey?: string;
+  preSharedKey?: string;
+  allowedIPs?: string;
+  persistentKeepalive?: number;
+  reserved?: number[];
+  mtu?: number;
+}
+
+export interface TunnelItem {
+  id: string;
+  name: string;
+  protocol: TunnelProtocol;
+  endpoint: string;
+  host: string;
+  port: number;
+  uuidOrPassword?: string;
+  security?: string;
+  sni?: string;
+  type?: string;
+  flow?: string;
+  path?: string;
+  insecure?: boolean;
+  wsHost?: string;
+  maxEarlyData?: number;
+  earlyDataHeaderName?: string;
+  wireguard?: WireguardParams;
+  rawConfig: string;
+  createdAt: number;
+}
+
+export type ParsedTunnel = Omit<TunnelItem, 'id' | 'createdAt'>;
+
+export interface ParseResult {
+  success: boolean;
+  tunnel?: ParsedTunnel;
+  error?: string;
 }

@@ -1,7 +1,8 @@
 import { useEffect, useCallback, useMemo } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useTunnelStore } from '../store/useTunnelStore';
-import { buildUniversalSingBoxConfig, validateSingBoxConfig } from '../utils/singboxConfig';
+import { buildUniversalSingBoxConfig } from '../config/SingboxConfigBuilder';
+import { validateSingBoxConfig } from '../config/ConfigValidator';
 import type {
   SingBoxConfigInput,
   SingBoxConfigObject,

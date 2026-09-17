@@ -32,17 +32,30 @@ export interface VpnStopResult {
   error?: string;
 }
 
+export interface SingBoxWireGuardPeer {
+  server?: string;
+  server_port?: number;
+  public_key: string;
+  pre_shared_key?: string;
+  allowed_ips: string[];
+  reserved?: number[];
+}
+
 /**
  * Sing-box Universal Inbound/Outbound Configuration Structure
- * Supports VLESS, Reality, Hysteria2, Trojan, WireGuard, and Shadowsocks
+ * Supports VLESS, Reality, Hysteria2, Trojan, WireGuard, VMess, and Shadowsocks
  */
 export interface SingBoxOutbound {
-  type: 'vless' | 'reality' | 'hysteria2' | 'trojan' | 'wireguard' | 'shadowsocks' | 'direct' | 'block';
+  type: 'vless' | 'reality' | 'hysteria2' | 'trojan' | 'wireguard' | 'vmess' | 'shadowsocks' | 'direct' | 'block';
   tag: string;
   server?: string;
   server_port?: number;
   uuid?: string;
   password?: string;
+  security?: string;
+  alter_id?: number;
+  global_padding?: boolean;
+  authenticated_length?: boolean;
   flow?: string;
   tls?: {
     enabled?: boolean;
@@ -67,6 +80,11 @@ export interface SingBoxOutbound {
   local_address?: string[];
   private_key?: string;
   peer_public_key?: string;
+  pre_shared_key?: string;
+  reserved?: number[];
+  mtu?: number;
+  workers?: number;
+  peers?: SingBoxWireGuardPeer[];
   [key: string]: unknown;
 }
 
