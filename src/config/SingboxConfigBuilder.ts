@@ -250,9 +250,10 @@ export function buildUniversalSingBoxConfig(
       rules: [
         {
           outbound: 'any',
-          server: 'dns-remote',
+          server: 'dns-direct',
         },
       ],
+      final: 'dns-remote',
       strategy: 'prefer_ipv4',
     },
     inbounds: [
