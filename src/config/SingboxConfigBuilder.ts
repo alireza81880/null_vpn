@@ -273,6 +273,10 @@ export function buildUniversalSingBoxConfig(
     outbounds: [
       proxyOutbound,
       {
+        type: 'dns' as any,
+        tag: 'dns-out',
+      },
+      {
         type: 'direct',
         tag: 'direct',
       },
@@ -285,7 +289,7 @@ export function buildUniversalSingBoxConfig(
       rules: [
         {
           protocol: 'dns',
-          outbound: 'proxy-out',
+          outbound: 'dns-out',
         },
         {
           ip_is_private: true,
