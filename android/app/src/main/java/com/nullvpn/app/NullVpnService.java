@@ -39,7 +39,6 @@ import io.nekohasekai.libbox.RoutePrefix;
 import io.nekohasekai.libbox.RoutePrefixIterator;
 import io.nekohasekai.libbox.SetupOptions;
 import io.nekohasekai.libbox.ShellSession;
-import io.nekohasekai.libbox.StringBox;
 import io.nekohasekai.libbox.StringIterator;
 import io.nekohasekai.libbox.SystemProxyStatus;
 import io.nekohasekai.libbox.TunOptions;
@@ -455,11 +454,18 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
         // Configure DNS servers
         boolean hasDns = false;
         try {
-            StringBox dnsBox = options.getDNSServerAddress();
-            if (dnsBox != null && dnsBox.getValue() != null && !dnsBox.getValue().trim().isEmpty()) {
-                builder.addDnsServer(dnsBox.getValue().trim());
-                hasDns = true;
-                Log.d(TAG, "openTun: addDnsServer from options: " + dnsBox.getValue().trim());
+            StringIterator dnsServers = options.getDNSServerAddress();
+            while (dnsServers != null && dnsServers.hasNext()) {
+                String dns = dnsServers.next();
+                if (dns != null && !dns.trim().isEmpty()) {
+                    try {
+                        builder.addDnsServer(dns.trim());
+                        hasDns = true;
+                        Log.d(TAG, "openTun: addDnsServer from options: " + dns.trim());
+                    } catch (Exception e) {
+                        Log.w(TAG, "openTun: Failed to add DNS server " + dns + ": " + e.getMessage());
+                    }
+                }
             }
         } catch (Exception e) {
             Log.d(TAG, "openTun: getDNSServerAddress: " + e.getMessage());

@@ -24,6 +24,12 @@ export interface TunnelStoreState {
   // Primary Actions
   addTunnel: (rawText: string) => { success: boolean; tunnel?: TunnelItem; error?: string };
   addParsedTunnel: (item: Omit<TunnelItem, 'id' | 'createdAt'>) => TunnelItem;
+  addParsedTunnels: (items: ParsedTunnel[]) => {
+    success: boolean;
+    addedCount: number;
+    validTunnels: TunnelItem[];
+    errors: string[];
+  };
   updateTunnel: (id: string, updates: Partial<TunnelItem>) => void;
   removeTunnel: (id: string) => void;
   setActiveTunnel: (id: string | null) => void;
@@ -211,6 +217,100 @@ export const useTunnelStore = create<TunnelStoreState>((set, get) => {
       }
 
       return newTunnel;
+    },
+
+    addParsedTunnels: (items: ParsedTunnel[]) => {
+      if (!Array.isArray(items) || items.length === 0) {
+        return { success: false, addedCount: 0, validTunnels: [], errors: ['No nodes found to import'] };
+      }
+
+      const validTunnels: TunnelItem[] = [];
+      const errors: string[] = [];
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const newTunnel: TunnelItem = {
+          ...item,
+          id: `tunnel-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 7)}`,
+          createdAt: Date.now() + i,
+        };
+
+        try {
+          const generatedConfig = buildUniversalSingBoxConfig(newTunnel, { isMobile: true });
+          const validation = validateSingBoxConfig(generatedConfig);
+          if (!validation.valid) {
+            errors.push(`[${item.name || item.endpoint}]: ${validation.error || 'Invalid configuration'}`);
+            continue;
+          }
+          validTunnels.push(newTunnel);
+        } catch (valErr: any) {
+          errors.push(`[${item.name || item.endpoint}]: ${valErr?.message || 'Validation error'}`);
+          continue;
+        }
+      }
+
+      if (validTunnels.length === 0) {
+        return { success: false, addedCount: 0, validTunnels: [], errors };
+      }
+
+      const updated = [...validTunnels, ...get().tunnels];
+      const firstId = validTunnels[0].id;
+
+      set({
+        tunnels: updated,
+        activeTunnelId: firstId,
+        activeTunnel: validTunnels[0],
+      });
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEY_TUNNELS, JSON.stringify(updated));
+        localStorage.setItem(STORAGE_KEY_ACTIVE_TUNNEL, firstId);
+      }
+
+      // Synchronize to useAppStore
+      validTunnels.forEach((t) => {
+        try {
+          if (t.protocol === 'wireguard' && t.wireguard) {
+            useAppStore.getState().addConfig({
+              id: t.id,
+              name: t.name,
+              endpoint: t.endpoint,
+              interface: {
+                privateKey: t.wireguard.privateKey,
+                address: t.wireguard.address,
+                dns: t.wireguard.dns,
+                mtu: t.wireguard.mtu,
+              },
+              peer: {
+                publicKey: t.wireguard.publicKey,
+                endpoint: t.endpoint,
+                allowedIPs: t.wireguard.allowedIPs,
+                persistentKeepalive: t.wireguard.persistentKeepalive,
+              },
+              rawConfig: t.rawConfig,
+            });
+          } else {
+            useAppStore.getState().addConfig({
+              id: t.id,
+              name: t.name,
+              endpoint: t.endpoint,
+              interface: {
+                address: '10.14.0.2/32',
+                dns: '1.1.1.1',
+              },
+              peer: {
+                endpoint: t.endpoint,
+                allowedIPs: '0.0.0.0/0',
+              },
+              rawConfig: t.rawConfig,
+            });
+          }
+        } catch (err) {
+          console.warn('Failed to mirror node to AppStore:', err);
+        }
+      });
+
+      return { success: true, addedCount: validTunnels.length, validTunnels, errors };
     },
 
     updateTunnel: (id: string, updates: Partial<TunnelItem>) => {

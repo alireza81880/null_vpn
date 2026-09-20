@@ -10,10 +10,13 @@ import {
   Camera,
   Shield,
   Layers,
+  Globe,
 } from 'lucide-react';
 import { useTunnelStore } from '../../store/useTunnelStore';
 import { LiquidButton } from '../ui/LiquidButton';
 import { useI18n } from '../../i18n/I18nContext';
+import { fetchSubscription } from '../../utils/subscriptionFetcher';
+import { SubscriptionDecoder } from '../../parsers/SubscriptionDecoder';
 
 export interface ImportModalProps {
   isOpen: boolean;
@@ -38,12 +41,14 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 }) => {
   const { t } = useI18n();
   const addTunnel = useTunnelStore((state) => state.addTunnel);
+  const addParsedTunnels = useTunnelStore((state) => state.addParsedTunnels);
 
   const [rawText, setRawText] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isScanningQR, setIsScanningQR] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingStatus, setProcessingStatus] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -53,6 +58,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   const detectedProtocol = (() => {
     const trimmed = rawText.trim();
     if (!trimmed) return null;
+    if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) return 'Subscription URL';
     if (trimmed.includes('[Interface]') || trimmed.includes('[Peer]')) return 'WireGuard';
     if (trimmed.toLowerCase().startsWith('vless://')) return 'VLESS';
     if (trimmed.toLowerCase().startsWith('trojan://')) return 'Trojan';
@@ -61,13 +67,61 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     return 'Custom / Raw';
   })();
 
-  const handleProcessImport = (text: string) => {
+  const handleProcessImport = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      setError('Please provide a config, URI, or subscription URL.');
+      return;
+    }
+
     setError(null);
     setSuccessMsg(null);
     setIsProcessing(true);
 
     try {
-      const res = addTunnel(text);
+      // 1. Subscription URL Import Flow (http:// or https://)
+      if (trimmed.startsWith('https://') || trimmed.startsWith('http://')) {
+        setProcessingStatus('در حال دریافت اشتراک...');
+        const fetchRes = await fetchSubscription(trimmed);
+
+        if (!fetchRes.success || !fetchRes.content) {
+          setError(fetchRes.error || 'Failed to fetch subscription from remote URL.');
+          return;
+        }
+
+        setProcessingStatus('در حال پردازش نودها...');
+        const decodeRes = SubscriptionDecoder.decodeAndParse(fetchRes.content);
+
+        if (decodeRes.unsupportedMessage) {
+          setError(decodeRes.unsupportedMessage);
+          return;
+        }
+
+        if (!decodeRes.nodes || decodeRes.nodes.length === 0) {
+          const firstErr = decodeRes.errors?.[0]?.error;
+          setError(firstErr || 'No valid proxy nodes found in subscription.');
+          return;
+        }
+
+        const addRes = addParsedTunnels(decodeRes.nodes);
+        if (addRes.success && addRes.addedCount > 0) {
+          const count = addRes.addedCount;
+          setSuccessMsg(`${count} nodes imported`);
+          setRawText('');
+          if (onSuccess) onSuccess(`${count} nodes`);
+          setTimeout(() => {
+            onClose();
+            setSuccessMsg(null);
+          }, 1200);
+        } else {
+          setError(addRes.errors?.[0] || 'No valid nodes could be imported.');
+        }
+        return;
+      }
+
+      // 2. Direct single-node / raw config Import Flow
+      setProcessingStatus(null);
+      const res = addTunnel(trimmed);
       if (res.success && res.tunnel) {
         setSuccessMsg(`Tunnel "${res.tunnel.name}" imported successfully!`);
         setRawText('');
@@ -77,12 +131,31 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           setSuccessMsg(null);
         }, 1200);
       } else {
+        // Fallback: check if multi-node raw plain / base64 / json was provided
+        const detection = SubscriptionDecoder.detectFormat(trimmed);
+        if (detection.format !== 'unknown' && detection.format !== 'clash-yaml') {
+          const decodeRes = SubscriptionDecoder.decodeAndParse(trimmed);
+          if (decodeRes.nodes && decodeRes.nodes.length > 0) {
+            const addRes = addParsedTunnels(decodeRes.nodes);
+            if (addRes.success && addRes.addedCount > 0) {
+              setSuccessMsg(`${addRes.addedCount} nodes imported`);
+              setRawText('');
+              if (onSuccess) onSuccess(`${addRes.addedCount} nodes`);
+              setTimeout(() => {
+                onClose();
+                setSuccessMsg(null);
+              }, 1200);
+              return;
+            }
+          }
+        }
         setError(res.error || 'Failed to parse configuration');
       }
     } catch (err: any) {
       setError(err?.message || 'An unexpected error occurred during import.');
     } finally {
       setIsProcessing(false);
+      setProcessingStatus(null);
     }
   };
 
@@ -180,7 +253,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 Import Tunnel Configuration
               </h2>
               <p className="text-[11px] font-mono text-[var(--text-muted)]">
-                WireGuard (.conf) · VLESS · Trojan · VMess · Shadowsocks
+                Subscription URL · WireGuard · VLESS · Trojan · VMess · Shadowsocks
               </p>
             </div>
           </div>
@@ -325,7 +398,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 rows={5}
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
-                placeholder="Paste share link (e.g. vless://uuid@host:443?security=reality&type=xhttp...) or WireGuard [Interface] config..."
+                placeholder="Paste subscription URL (https://...), share link (vless://, trojan://...), or WireGuard [Interface] config..."
                 style={{
                   backgroundColor: 'var(--bg-surface-elevated)',
                   borderColor: 'var(--border-glass)',
@@ -351,11 +424,11 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 variant="primary"
                 morphology="pill"
                 size="md"
-                disabled={!rawText.trim()}
+                disabled={!rawText.trim() || isProcessing}
                 isLoading={isProcessing}
                 onClick={() => handleProcessImport(rawText)}
               >
-                Import Tunnel
+                {processingStatus ? processingStatus : 'Import Tunnel'}
               </LiquidButton>
             </div>
           </div>
