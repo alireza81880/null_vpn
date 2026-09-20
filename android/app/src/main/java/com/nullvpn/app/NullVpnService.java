@@ -449,7 +449,7 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                     builder.addRoute(prefix.address(), prefix.prefix());
                 } catch (Exception ignored) {}
             }
-        }
+        } 
 
         // Configure DNS servers
         boolean hasDns = false;
