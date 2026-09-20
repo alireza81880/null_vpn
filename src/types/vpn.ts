@@ -86,6 +86,15 @@ export interface TunnelItem {
   wsHost?: string;
   maxEarlyData?: number;
   earlyDataHeaderName?: string;
+  reality?: {
+    publicKey?: string;
+    shortId?: string;
+  };
+  utls?: {
+    fingerprint?: string;
+  };
+  packetEncoding?: string;
+  alpn?: string[];
   wireguard?: WireguardParams;
   rawConfig: string;
   createdAt: number;

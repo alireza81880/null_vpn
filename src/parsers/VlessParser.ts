@@ -66,6 +66,37 @@ export function parseVlessUri(rawUri: string): ParseResult {
     const insecure = params.get('allowInsecure') === '1';
     const wsHost = params.get('host') || undefined;
 
+    // Reality parameters with aliases (pbk / public_key, sid / short_id)
+    const publicKey = params.get('pbk') || params.get('public_key') || undefined;
+    const shortId = params.get('sid') || params.get('short_id') || undefined;
+
+    // uTLS fingerprint with aliases (fp / fingerprint)
+    const fingerprint = params.get('fp') || params.get('fingerprint') || undefined;
+
+    // Packet encoding with aliases (packetEncoding / packet_encoding)
+    const packetEncoding = params.get('packetEncoding') || params.get('packet_encoding') || undefined;
+
+    // ALPN list (comma-separated if present)
+    const rawAlpn = params.get('alpn');
+    const alpn = rawAlpn
+      ? rawAlpn.split(',').map((s) => s.trim()).filter(Boolean)
+      : undefined;
+
+    const reality =
+      security === 'reality' || publicKey !== undefined || shortId !== undefined
+        ? {
+            publicKey,
+            shortId,
+          }
+        : undefined;
+
+    const utls =
+      fingerprint !== undefined
+        ? {
+            fingerprint,
+          }
+        : undefined;
+
     const tunnel: ParsedTunnel = {
       name,
       protocol: 'vless',
@@ -82,6 +113,10 @@ export function parseVlessUri(rawUri: string): ParseResult {
       wsHost,
       maxEarlyData,
       earlyDataHeaderName,
+      reality,
+      utls,
+      packetEncoding,
+      alpn,
       rawConfig: rawUri.trim(),
     };
 

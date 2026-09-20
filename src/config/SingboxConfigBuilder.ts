@@ -98,7 +98,39 @@ export function buildUniversalSingBoxConfig(
     const host = tunnel.host || tunnel.endpoint.split(':')[0] || '127.0.0.1';
     const port = tunnel.port || 443;
     const uuid = tunnel.uuidOrPassword || '';
-    const hasTls = tunnel.security === 'tls' || tunnel.security === 'reality';
+    const isReality = tunnel.security === 'reality';
+    const isTls = tunnel.security === 'tls';
+    const hasTls = isTls || isReality;
+
+    let tlsConfig: Record<string, any> | undefined = undefined;
+    if (hasTls) {
+      const baseTls: Record<string, any> = {
+        enabled: true,
+        server_name: tunnel.sni || host,
+        insecure: tunnel.insecure,
+      };
+
+      if (tunnel.alpn && tunnel.alpn.length > 0) {
+        baseTls.alpn = tunnel.alpn;
+      }
+
+      if (isReality) {
+        // In sing-box v1.10.7, uTLS is required by reality client
+        const fp = tunnel.utls?.fingerprint || 'chrome';
+        baseTls.utls = {
+          enabled: true,
+          fingerprint: fp,
+        };
+
+        baseTls.reality = {
+          enabled: true,
+          public_key: tunnel.reality?.publicKey || '',
+          short_id: tunnel.reality?.shortId !== undefined ? tunnel.reality.shortId : undefined,
+        };
+      }
+
+      tlsConfig = baseTls;
+    }
 
     proxyOutbound = {
       type: 'vless',
@@ -107,13 +139,8 @@ export function buildUniversalSingBoxConfig(
       server_port: port,
       uuid,
       flow: tunnel.flow || undefined,
-      tls: hasTls
-        ? {
-            enabled: true,
-            server_name: tunnel.sni || host,
-            insecure: tunnel.insecure,
-          }
-        : undefined,
+      packet_encoding: tunnel.packetEncoding || undefined,
+      tls: tlsConfig,
       transport:
         tunnel.type === 'ws'
           ? (() => {

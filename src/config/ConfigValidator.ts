@@ -73,11 +73,53 @@ export function validateSingBoxConfig(
       }
     }
   } else if (proxyOut.type === 'vless') {
-    if (!proxyOut.server) {
+    if (!proxyOut.server || typeof proxyOut.server !== 'string' || !proxyOut.server.trim()) {
       return { valid: false, error: 'VLESS outbound requires a valid server address' };
+    }
+    if (!proxyOut.server_port || typeof proxyOut.server_port !== 'number' || proxyOut.server_port <= 0 || proxyOut.server_port > 65535) {
+      return { valid: false, error: 'VLESS outbound requires a valid server_port (1-65535)' };
     }
     if (!proxyOut.uuid || typeof proxyOut.uuid !== 'string' || !proxyOut.uuid.trim()) {
       return { valid: false, error: 'VLESS outbound requires a valid UUID' };
+    }
+
+    // Reality validation according to sing-box v1.10.7 runtime requirements
+    const tls = proxyOut.tls as Record<string, any> | undefined;
+    if (tls?.reality?.enabled) {
+      if (!tls.enabled) {
+        return { valid: false, error: 'Reality requires TLS to be enabled (tls.enabled=true)' };
+      }
+      if (!tls.server_name || typeof tls.server_name !== 'string' || !tls.server_name.trim()) {
+        return { valid: false, error: 'Reality requires a valid server_name (SNI)' };
+      }
+      if (!tls.utls || !tls.utls.enabled) {
+        return { valid: false, error: 'uTLS is required by reality client in sing-box v1.10.7 (tls.utls.enabled=true)' };
+      }
+      const pubKey = tls.reality.public_key;
+      if (!pubKey || typeof pubKey !== 'string' || !pubKey.trim()) {
+        return { valid: false, error: 'Reality requires a valid public_key (pbk)' };
+      }
+
+      // v1.10.7 expects raw URL unpadded base64 (32 bytes)
+      try {
+        const normalizedB64 = pubKey.replace(/-/g, '+').replace(/_/g, '/');
+        const padLen = (4 - (normalizedB64.length % 4)) % 4;
+        const paddedB64 = normalizedB64 + '='.repeat(padLen);
+        const decoded = atob(paddedB64);
+        if (decoded.length !== 32) {
+          return { valid: false, error: `Invalid Reality public_key length: expected 32 bytes, got ${decoded.length}` };
+        }
+      } catch {
+        return { valid: false, error: 'Invalid Reality public_key: not valid base64' };
+      }
+
+      // short_id is optional in v1.10.7 (up to 8 bytes / 16 hex chars)
+      const shortId = tls.reality.short_id;
+      if (shortId !== undefined && shortId !== null && shortId !== '') {
+        if (typeof shortId !== 'string' || !/^[0-9a-fA-F]*$/.test(shortId) || shortId.length > 16) {
+          return { valid: false, error: 'Invalid Reality short_id: must be hexadecimal and at most 16 characters' };
+        }
+      }
     }
   } else if (proxyOut.type === 'trojan') {
     if (!proxyOut.server) {
