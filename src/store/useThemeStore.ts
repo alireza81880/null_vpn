@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { useAppStore } from './useAppStore';
 
-export type ThemeCategory = 'light' | 'dark' | 'premium';
+export type ThemeCategory = 'neumorphic' | 'light' | 'dark' | 'premium';
 
 export interface ThemeMeta {
   id: string;
@@ -15,6 +15,28 @@ export interface ThemeMeta {
 }
 
 export const THEME_REGISTRY: ThemeMeta[] = [
+  // Neumorphic / Soft UI Themes (Featured)
+  {
+    id: 'neo-ice',
+    name: 'Neo Ice (Soft UI)',
+    category: 'neumorphic',
+    primaryColor: '#3b82f6',
+    surfaceColor: '#adbac7',
+    canvasColor: '#adbac7',
+    accentGlow: 'rgba(59, 130, 246, 0.35)',
+    description: 'Soft tactile neumorphism with cool ice tone and pill controls',
+  },
+  {
+    id: 'neo-mauve',
+    name: 'Neo Mauve (Soft UI)',
+    category: 'neumorphic',
+    primaryColor: '#c084fc',
+    surfaceColor: '#8c6982',
+    canvasColor: '#8c6982',
+    accentGlow: 'rgba(192, 132, 252, 0.35)',
+    description: 'Warm dusty mauve soft raised surfaces and subtle highlights',
+  },
+
   // 4 Light Themes
   {
     id: 'clean-minimal',

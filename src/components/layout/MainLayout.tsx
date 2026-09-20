@@ -2,6 +2,7 @@ import React, { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import { BottomNav } from './BottomNav';
 import { WindowHeader } from './WindowHeader';
+import { NullSparkleLink } from './NullSparkleLink';
 import { useNavigationStore } from '../../store/useNavigationStore';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -77,14 +78,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
             <span className="text-sm font-light text-gray-500 tracking-wide">
               Made by
             </span>
-            <a
-              href="https://alireza81880.github.io/"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-bold text-sm bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-indigo-400 to-purple-500 hover:scale-105 hover:drop-shadow-[0_0_8px_rgba(168,85,247,0.5)] transition-all duration-300 inline-block cursor-pointer"
-            >
-              null
-            </a>
+            <NullSparkleLink href="https://alireza81880.github.io/" />
           </footer>
         </main>
 

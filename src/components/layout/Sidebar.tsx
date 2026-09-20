@@ -83,8 +83,8 @@ export const Sidebar: React.FC = () => {
               style={{
                 backgroundColor: isActive ? 'var(--bg-surface-elevated)' : 'transparent',
                 color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
-                border: isActive ? '1px solid var(--border-glass)' : '1px solid transparent',
-                boxShadow: isActive ? 'var(--glass-shadow)' : 'none',
+                border: isActive ? '1px solid var(--border-subtle)' : '1px solid transparent',
+                boxShadow: isActive ? 'var(--neo-raised-sm)' : 'none',
               }}
             >
               <div className="flex items-center gap-3">

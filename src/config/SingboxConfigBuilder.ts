@@ -248,6 +248,17 @@ export function buildUniversalSingBoxConfig(
         },
       ],
       rules: [
+        ...(proxyOutbound.type === 'vless' &&
+        proxyOutbound.server &&
+        !/^(\d{1,3}\.){3}\d{1,3}$/.test(proxyOutbound.server) &&
+        !proxyOutbound.server.includes(':')
+          ? [
+              {
+                domain: [proxyOutbound.server],
+                server: 'dns-direct',
+              },
+            ]
+          : []),
         {
           outbound: 'any',
           server: 'dns-direct',

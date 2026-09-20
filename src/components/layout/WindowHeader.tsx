@@ -62,6 +62,7 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({ title }) => {
           style={{
             backgroundColor: 'var(--bg-surface-elevated)',
             border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--neo-inset-sm)',
             color: isConnected
               ? 'var(--status-connected)'
               : isConnecting
@@ -101,10 +102,11 @@ export const WindowHeader: React.FC<WindowHeaderProps> = ({ title }) => {
           type="button"
           id="btn-header-lang"
           onClick={toggleLanguage}
-          className="px-2.5 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:opacity-85 flex items-center gap-1.5"
+          className="px-2.5 py-1 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:scale-105 active:scale-95 flex items-center gap-1.5"
           style={{
             backgroundColor: 'var(--bg-surface-elevated)',
             border: '1px solid var(--border-subtle)',
+            boxShadow: 'var(--neo-raised-sm)',
             color: 'var(--text-primary)',
           }}
         >

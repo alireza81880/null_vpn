@@ -112,16 +112,21 @@ export const ConnectionShield: React.FC<ConnectionShieldProps> = memo(({ onToggl
             ? 'linear-gradient(145deg, var(--bg-surface-elevated), var(--bg-surface))'
             : isConnecting
             ? 'linear-gradient(145deg, var(--bg-surface-elevated), var(--bg-surface))'
-            : 'linear-gradient(145deg, var(--bg-surface-glass), var(--bg-surface))',
+            : 'linear-gradient(145deg, var(--bg-surface-elevated), var(--bg-surface))',
           borderColor: isConnected
             ? 'var(--status-connected)'
             : isConnecting
             ? 'var(--status-connecting)'
-            : 'var(--border-strong)',
+            : 'var(--border-subtle)',
+          boxShadow: isConnected
+            ? 'var(--neo-raised), 0 0 24px var(--status-connected-glow)'
+            : isConnecting
+            ? 'var(--neo-raised), 0 0 24px var(--status-connecting-glow)'
+            : 'var(--neo-raised)',
         }}
         className={`
           relative z-10 w-44 h-44 sm:w-52 sm:h-52 rounded-full p-2.5 flex flex-col items-center justify-center
-          border-[1.5px] cursor-pointer focus:outline-none
+          border cursor-pointer focus:outline-none transition-shadow duration-200
           ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
         `}
       >
@@ -148,10 +153,13 @@ export const ConnectionShield: React.FC<ConnectionShieldProps> = memo(({ onToggl
               ? 'var(--status-connected)'
               : isConnecting
               ? 'var(--status-connecting)'
-              : 'rgba(255, 255, 255, 0.05)',
+              : 'var(--bg-input)',
+            boxShadow: isConnected || isConnecting
+              ? 'inset 0 2px 4px rgba(255, 255, 255, 0.3), inset 0 -2px 4px rgba(0, 0, 0, 0.2)'
+              : 'var(--neo-inset)',
             color: isConnected || isConnecting ? '#ffffff' : 'var(--text-muted)',
           }}
-          className="relative z-10 w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center mb-2 transition-colors duration-200"
+          className="relative z-10 w-20 h-20 sm:w-24 sm:h-24 rounded-full flex items-center justify-center mb-2 transition-all duration-200"
         >
           {isConnecting ? (
             <motion.div

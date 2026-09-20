@@ -98,6 +98,8 @@
     "dnsLeakDesc": "Enforces 1.1.1.1 DoH with strict cryptographic validation"
   },
   "themes": {
+    "neo-ice": "Neo Ice (Soft UI)",
+    "neo-mauve": "Neo Mauve (Soft UI)",
     "clean-minimal": "Clean Minimal",
     "soft-blue": "Soft Blue",
     "pearl": "Pearl",

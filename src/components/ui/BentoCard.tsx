@@ -62,6 +62,7 @@ export const BentoCard: React.FC<BentoCardProps> = React.memo(({
         boxShadow: 'var(--glass-shadow)',
       }}
       className={`
+        bento-card-root
         ${colSpan}
         relative flex flex-col
         rounded-2xl

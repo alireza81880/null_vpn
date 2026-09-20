@@ -39,9 +39,11 @@ export const BottomNav: React.FC = () => {
       <div
         dir="ltr"
         style={{
-          boxShadow: '0 8px 32px 0 rgba(0, 0, 0, 0.37), inset 0 1px 1px 0 rgba(255, 255, 255, 0.2)',
+          backgroundColor: 'var(--bg-surface-glass)',
+          borderColor: 'var(--border-subtle)',
+          boxShadow: 'var(--neo-raised-lg)',
         }}
-        className="pointer-events-auto flex items-center justify-center gap-3 px-3.5 py-2.5 rounded-full bg-white/10 dark:bg-white/10 backdrop-blur-md border border-white/20 dark:border-white/15"
+        className="glass-nav pointer-events-auto flex items-center justify-center gap-3 px-3.5 py-2.5 rounded-full border"
       >
         {navItems.map((item) => {
           const Icon = item.icon;
@@ -54,10 +56,14 @@ export const BottomNav: React.FC = () => {
               type="button"
               onClick={() => setCurrentTab(item.id as NavTab)}
               aria-label={item.label}
-              className={`relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 cursor-pointer active:scale-90 ${
-                isActive
-                  ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/40 ring-2 ring-white/30 scale-105'
-                  : 'bg-black/20 hover:bg-white/15 text-white/70 hover:text-white border border-white/10'
+              style={{
+                backgroundColor: isActive ? 'var(--accent-primary)' : 'var(--bg-surface-elevated)',
+                color: isActive ? 'var(--accent-foreground, #ffffff)' : 'var(--text-secondary)',
+                boxShadow: isActive ? 'var(--neo-raised-sm), 0 0 16px var(--accent-glow)' : 'var(--neo-inset-sm)',
+                borderColor: isActive ? 'var(--accent-primary)' : 'var(--border-subtle)',
+              }}
+              className={`relative flex items-center justify-center w-12 h-12 rounded-full transition-all duration-200 cursor-pointer active:scale-95 border ${
+                isActive ? 'scale-105 font-bold' : 'hover:scale-100'
               }`}
             >
               <Icon
@@ -68,7 +74,10 @@ export const BottomNav: React.FC = () => {
 
               {/* Tiny indicator dot under active tab */}
               {isActive && (
-                <span className="absolute -bottom-1 w-1.5 h-1.5 rounded-full bg-white shadow-sm" />
+                <span
+                  style={{ backgroundColor: 'var(--accent-foreground, #ffffff)' }}
+                  className="absolute -bottom-1 w-1.5 h-1.5 rounded-full shadow-xs"
+                />
               )}
             </button>
           );

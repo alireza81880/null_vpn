@@ -40,13 +40,13 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ id, checked, onChange, disa
       disabled={disabled}
       onClick={() => onChange(!checked)}
       style={{
-        backgroundColor: checked ? 'var(--accent-primary)' : 'var(--bg-surface-elevated)',
+        backgroundColor: checked ? 'var(--accent-primary)' : 'var(--bg-input)',
         borderColor: checked ? 'var(--accent-primary)' : 'var(--border-subtle)',
-        boxShadow: checked ? '0 0 14px var(--accent-glow)' : 'none',
+        boxShadow: checked ? '0 0 14px var(--accent-glow)' : 'var(--neo-inset-sm)',
       }}
       className={`
-        relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2
-        transition-colors duration-200 ease-in-out focus:outline-none
+        relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border
+        transition-all duration-200 ease-in-out focus:outline-none
         ${disabled ? 'opacity-50 cursor-not-allowed' : ''}
       `}
     >
@@ -54,10 +54,11 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ id, checked, onChange, disa
         layout
         transition={{ type: 'spring', stiffness: 500, damping: 30 }}
         style={{
-          backgroundColor: checked ? 'var(--accent-foreground, #ffffff)' : 'var(--text-muted)',
+          backgroundColor: checked ? 'var(--accent-foreground, #ffffff)' : 'var(--bg-surface-elevated)',
+          boxShadow: 'var(--neo-raised-sm)',
         }}
         className={`
-          pointer-events-none inline-block h-5 w-5 rounded-full shadow-md
+          pointer-events-none inline-block h-5 w-5 rounded-full
           transform ${checked ? 'translate-x-5' : 'translate-x-0'}
         `}
       />
@@ -182,9 +183,10 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           {/* Category Filter Pills */}
-          <div className="flex items-center gap-1.5 bg-[var(--bg-surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] select-none self-start sm:self-auto">
-            {(['all', 'light', 'dark', 'premium'] as const).map((cat) => {
+          <div className="flex flex-wrap items-center gap-1.5 bg-[var(--bg-surface-elevated)] p-1 rounded-xl border border-[var(--border-subtle)] select-none self-start sm:self-auto">
+            {(['all', 'neumorphic', 'light', 'dark', 'premium'] as const).map((cat) => {
               const isSelected = selectedCategory === cat;
+              const count = cat === 'all' ? THEME_REGISTRY.length : THEME_REGISTRY.filter((t) => t.category === cat).length;
               return (
                 <button
                   key={cat}
@@ -196,7 +198,7 @@ export const SettingsPage: React.FC = () => {
                   }}
                   className="px-3 py-1 rounded-lg text-xs font-semibold capitalize cursor-pointer transition-all"
                 >
-                  {cat === 'all' ? 'All (12)' : cat}
+                  {cat === 'all' ? `All (${count})` : cat === 'neumorphic' ? `Soft UI (${count})` : `${cat} (${count})`}
                 </button>
               );
             })}
@@ -215,11 +217,11 @@ export const SettingsPage: React.FC = () => {
                 type="button"
                 onClick={() => setTheme(th.id)}
                 style={{
-                  backgroundColor: isSelected ? 'var(--bg-surface-elevated)' : 'var(--bg-surface-glass)',
-                  borderColor: isSelected ? 'var(--accent-primary)' : 'var(--border-glass)',
+                  backgroundColor: isSelected ? 'var(--bg-surface-elevated)' : 'var(--bg-surface)',
+                  borderColor: isSelected ? 'var(--accent-primary)' : 'var(--border-subtle)',
                   boxShadow: isSelected
                     ? '0 0 0 1.5px var(--accent-primary), 0 0 20px var(--accent-glow)'
-                    : 'var(--glass-shadow)',
+                    : 'var(--neo-raised-sm)',
                   transform: 'translateZ(0)',
                 }}
                 className={`

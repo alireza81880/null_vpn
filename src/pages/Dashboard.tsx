@@ -23,6 +23,7 @@ import { BentoCard } from '../components/ui/BentoCard';
 import { LiquidButton } from '../components/ui/LiquidButton';
 import { ConnectionNode } from '../components/dashboard/ConnectionNode';
 import { TelemetryGrid } from '../components/dashboard/TelemetryGrid';
+import { MainConnectButton } from '../components/dashboard/MainConnectButton';
 import { ImportModal } from '../components/modals/ImportModal';
 
 export const Dashboard: React.FC = () => {
@@ -436,33 +437,14 @@ PersistentKeepalive = 25`;
         {/* Primary Action Button */}
         <div
           style={{ borderTopColor: 'var(--border-subtle)' }}
-          className="flex flex-col items-center justify-center mt-6 pt-5 border-t"
+          className="w-full flex flex-col items-center justify-center mt-6 pt-5 border-t"
         >
-          <LiquidButton
+          <MainConnectButton
             id="btn-main-connection-toggle"
-            variant={isConnected ? 'danger' : 'primary'}
-            morphology="pill"
-            size="lg"
-            className="w-full sm:w-64 tracking-wider uppercase text-sm font-bold"
-            isLoading={isConnecting}
-            icon={
-              isConnected ? (
-                <Zap className="w-4 h-4 text-white" />
-              ) : (
-                <Shield className="w-4 h-4 text-white" />
-              )
-            }
+            connectionState={connectionState}
+            isConnecting={isConnecting}
             onClick={toggle}
-          >
-            {isConnected ? t('dashboard.disconnect') : t('dashboard.connect')}
-          </LiquidButton>
-
-          <p
-            style={{ color: 'var(--text-muted)' }}
-            className="text-[11px] font-mono mt-2.5 text-center"
-          >
-            {t('dashboard.tapToToggle')}
-          </p>
+          />
         </div>
       </BentoCard>
 

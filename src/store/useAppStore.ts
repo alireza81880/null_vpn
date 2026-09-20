@@ -49,6 +49,8 @@ const getInitialTheme = (): ThemeId => {
   if (typeof window === 'undefined') return 'deep-space';
   const saved = localStorage.getItem(STORAGE_KEYS.THEME) as ThemeId | null;
   const validThemes: ThemeId[] = [
+    'neo-ice',
+    'neo-mauve',
     'clean-minimal',
     'soft-blue',
     'pearl',

@@ -52,6 +52,12 @@
 
   --glass-blur: 24px;
   --glass-shadow: 0 16px 40px 0 rgba(0, 0, 0, 0.5);
+  --neo-raised: 8px 8px 18px rgba(0, 0, 0, 0.4), -8px -8px 18px rgba(255, 255, 255, 0.05);
+  --neo-raised-sm: 4px 4px 10px rgba(0, 0, 0, 0.35), -4px -4px 10px rgba(255, 255, 255, 0.04);
+  --neo-raised-lg: 14px 14px 28px rgba(0, 0, 0, 0.45), -14px -14px 28px rgba(255, 255, 255, 0.06);
+  --neo-inset: inset 5px 5px 12px rgba(0, 0, 0, 0.45), inset -5px -5px 12px rgba(255, 255, 255, 0.05);
+  --neo-inset-sm: inset 3px 3px 8px rgba(0, 0, 0, 0.4), inset -3px -3px 8px rgba(255, 255, 255, 0.04);
+  --neo-pressed: inset 4px 4px 10px rgba(0, 0, 0, 0.45), inset -4px -4px 10px rgba(255, 255, 255, 0.04);
   --radius-sm: 8px;
   --radius-md: 14px;
   --radius-lg: 20px;
@@ -74,8 +80,105 @@
 }
 
 /* ==========================================================================
-   THE 12 COMPLETE THEMES ENGINE (Vision 2026 Color Science)
+   THE COMPLETE THEMES ENGINE (Vision 2026 Color Science & Neumorphism)
    ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   NEUMORPHIC / SOFT UI THEMES (2) - Soft Raised & Inset Surfaces
+   Exact Base Colors: Neo Ice (#adbac7), Neo Mauve (#8c6982)
+   -------------------------------------------------------------------------- */
+
+/* 0a. Neumorphic: Neo Ice */
+[data-theme="neo-ice"] {
+  --bg-canvas: #adbac7;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 10%, #b8c4d0 0%, #adbac7 80%);
+  --bg-surface: #adbac7;
+  --bg-surface-glass: #adbac7;
+  --bg-surface-elevated: #b5c2cf;
+  --bg-surface-hover: #b8c5d2;
+  --bg-input: #a3b0be;
+
+  --border-subtle: rgba(255, 255, 255, 0.45);
+  --border-strong: rgba(140, 155, 172, 0.5);
+  --border-glass: rgba(255, 255, 255, 0.4);
+  --border-luminous: rgba(255, 255, 255, 0.55);
+  --border-accent: rgba(59, 130, 246, 0.4);
+
+  --text-primary: #22272e;
+  --text-secondary: #444c56;
+  --text-muted: #636e7b;
+  --text-inverse: #ffffff;
+
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+  --accent-secondary: #6366f1;
+  --accent-secondary-hover: #4f46e5;
+  --accent-glow: rgba(59, 130, 246, 0.35);
+  --accent-purple-glow: rgba(99, 102, 241, 0.35);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #10b981;
+  --status-connected-glow: rgba(16, 185, 129, 0.35);
+  --status-disconnected: #636e7b;
+  --status-connecting: #f59e0b;
+  --status-connecting-glow: rgba(245, 158, 11, 0.35);
+  --status-error: #ef4444;
+
+  --glass-blur: 0px;
+  --glass-shadow: 8px 8px 20px rgba(144, 160, 177, 0.65), -8px -8px 20px rgba(210, 222, 235, 0.85);
+  --neo-raised: 8px 8px 20px rgba(144, 160, 177, 0.65), -8px -8px 20px rgba(210, 222, 235, 0.85);
+  --neo-raised-sm: 4px 4px 10px rgba(144, 160, 177, 0.55), -4px -4px 10px rgba(210, 222, 235, 0.75);
+  --neo-raised-lg: 14px 14px 28px rgba(144, 160, 177, 0.7), -14px -14px 28px rgba(210, 222, 235, 0.9);
+  --neo-inset: inset 5px 5px 12px rgba(144, 160, 177, 0.7), inset -5px -5px 12px rgba(210, 222, 235, 0.85);
+  --neo-inset-sm: inset 3px 3px 8px rgba(144, 160, 177, 0.6), inset -3px -3px 8px rgba(210, 222, 235, 0.8);
+  --neo-pressed: inset 5px 5px 12px rgba(144, 160, 177, 0.75), inset -5px -5px 12px rgba(210, 222, 235, 0.85);
+}
+
+/* 0b. Neumorphic: Neo Mauve */
+[data-theme="neo-mauve"] {
+  --bg-canvas: #8c6982;
+  --bg-canvas-gradient: radial-gradient(circle at 50% 10%, #98738e 0%, #8c6982 80%);
+  --bg-surface: #8c6982;
+  --bg-surface-glass: #8c6982;
+  --bg-surface-elevated: #96728c;
+  --bg-surface-hover: #9a7690;
+  --bg-input: #805e76;
+
+  --border-subtle: rgba(255, 255, 255, 0.28);
+  --border-strong: rgba(100, 70, 92, 0.5);
+  --border-glass: rgba(255, 255, 255, 0.24);
+  --border-luminous: rgba(255, 255, 255, 0.35);
+  --border-accent: rgba(216, 180, 254, 0.4);
+
+  --text-primary: #ffffff;
+  --text-secondary: #f3e8ff;
+  --text-muted: #d8b4fe;
+  --text-inverse: #44243b;
+
+  --accent-primary: #c084fc;
+  --accent-primary-hover: #a855f7;
+  --accent-secondary: #f472b6;
+  --accent-secondary-hover: #ec4899;
+  --accent-glow: rgba(192, 132, 252, 0.4);
+  --accent-purple-glow: rgba(244, 114, 182, 0.4);
+  --accent-foreground: #ffffff;
+
+  --status-connected: #34d399;
+  --status-connected-glow: rgba(52, 211, 153, 0.35);
+  --status-disconnected: #d8b4fe;
+  --status-connecting: #fbbf24;
+  --status-connecting-glow: rgba(251, 191, 36, 0.35);
+  --status-error: #f87171;
+
+  --glass-blur: 0px;
+  --glass-shadow: 8px 8px 20px rgba(102, 73, 94, 0.7), -8px -8px 20px rgba(178, 137, 166, 0.55);
+  --neo-raised: 8px 8px 20px rgba(102, 73, 94, 0.7), -8px -8px 20px rgba(178, 137, 166, 0.55);
+  --neo-raised-sm: 4px 4px 10px rgba(102, 73, 94, 0.6), -4px -4px 10px rgba(178, 137, 166, 0.45);
+  --neo-raised-lg: 14px 14px 28px rgba(102, 73, 94, 0.75), -14px -14px 28px rgba(178, 137, 166, 0.6);
+  --neo-inset: inset 5px 5px 12px rgba(102, 73, 94, 0.75), inset -5px -5px 12px rgba(178, 137, 166, 0.55);
+  --neo-inset-sm: inset 3px 3px 8px rgba(102, 73, 94, 0.65), inset -3px -3px 8px rgba(178, 137, 166, 0.5);
+  --neo-pressed: inset 5px 5px 12px rgba(102, 73, 94, 0.8), inset -5px -5px 12px rgba(178, 137, 166, 0.55);
+}
 
 /* --------------------------------------------------------------------------
    LIGHT MINIMALIST THEMES (4)
@@ -756,3 +859,182 @@ body {
 .animate-micro-spin {
   animation: micro-spin 0.65s linear infinite;
 }
+
+/* ==========================================================================
+   Neumorphic / Soft UI System (Raised Surfaces, Insets & Soft Shadowing)
+   ========================================================================== */
+
+/* Raised Surface */
+.neo-surface-raised {
+  box-shadow: var(--neo-raised);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  transform: translateZ(0);
+}
+
+.neo-surface-raised-sm {
+  box-shadow: var(--neo-raised-sm);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  transform: translateZ(0);
+}
+
+.neo-surface-raised-lg {
+  box-shadow: var(--neo-raised-lg);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  transform: translateZ(0);
+}
+
+/* Inset Surface (Inputs, Recessed Badges, Tracks) */
+.neo-surface-inset {
+  box-shadow: var(--neo-inset);
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  transform: translateZ(0);
+}
+
+.neo-surface-inset-sm {
+  box-shadow: var(--neo-inset-sm);
+  background-color: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  transform: translateZ(0);
+}
+
+/* Neumorphic Interactive Button (Raised default, Inset pressed) */
+.neo-button {
+  background-color: var(--bg-surface);
+  box-shadow: var(--neo-raised);
+  border: 1px solid var(--border-subtle);
+  transform: translateZ(0);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+
+.neo-button:hover {
+  transform: translateY(-1px) translateZ(0);
+  filter: brightness(1.03);
+}
+
+.neo-button:active {
+  transform: translateY(1px) translateZ(0);
+  box-shadow: var(--neo-pressed);
+  filter: brightness(0.98);
+}
+
+/* Specific theme overrides for BentoCard & glass utilities when in neumorphic mode */
+[data-theme="neo-ice"] .glass-panel,
+[data-theme="neo-ice"] .glass-card,
+[data-theme="neo-ice"] .bento-card-root,
+[data-theme="neo-mauve"] .glass-panel,
+[data-theme="neo-mauve"] .glass-card,
+[data-theme="neo-mauve"] .bento-card-root {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--bg-surface) !important;
+  box-shadow: var(--neo-raised) !important;
+  border: 1px solid var(--border-subtle) !important;
+}
+
+[data-theme="neo-ice"] .glass-nav,
+[data-theme="neo-mauve"] .glass-nav {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background: var(--bg-surface) !important;
+  box-shadow: var(--neo-raised-lg) !important;
+  border-top: 1px solid var(--border-subtle) !important;
+}
+
+/* ==========================================================================
+   Null Sparkle Link (Uiverse-inspired subtle inline link effect)
+   ========================================================================== */
+.null-sparkle-link {
+  color: var(--accent-primary, #a855f7);
+}
+
+.null-sparkle-glow {
+  background: radial-gradient(circle, var(--accent-glow, rgba(168, 85, 247, 0.35)) 0%, transparent 75%);
+  filter: blur(4px);
+}
+
+.null-sparkle-text {
+  background: linear-gradient(
+    90deg,
+    var(--accent-primary, #a855f7) 0%,
+    var(--accent-secondary, #ec4899) 50%,
+    var(--accent-primary, #a855f7) 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+  transition: all 0.3s ease;
+}
+
+.null-sparkle-link:hover .null-sparkle-text,
+.null-sparkle-link:focus-visible .null-sparkle-text {
+  animation: null-shimmer 2.2s linear infinite;
+  filter: drop-shadow(0 0 6px var(--accent-glow, rgba(168, 85, 247, 0.45)));
+}
+
+.null-sparkle-link:focus-visible {
+  border-radius: 4px;
+  outline: 2px solid var(--accent-primary, #a855f7);
+  outline-offset: 2px;
+}
+
+.null-sparkle-star {
+  color: var(--accent-primary, #a855f7);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.null-sparkle-link:hover .star-1,
+.null-sparkle-link:focus-visible .star-1 {
+  animation: null-sparkle-pulse 1.4s ease-in-out infinite alternate;
+}
+
+.null-sparkle-link:hover .star-2,
+.null-sparkle-link:focus-visible .star-2 {
+  animation: null-sparkle-pulse 1.4s ease-in-out infinite alternate 0.35s;
+}
+
+@keyframes null-shimmer {
+  0% {
+    background-position: 0% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+
+@keyframes null-sparkle-pulse {
+  0% {
+    transform: scale(0.6) rotate(0deg);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.15) rotate(45deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.8) rotate(90deg);
+    opacity: 0.6;
+  }
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+  .null-sparkle-link:hover .null-sparkle-text,
+  .null-sparkle-link:focus-visible .null-sparkle-text {
+    animation: none !important;
+  }
+  .null-sparkle-link:hover .star-1,
+  .null-sparkle-link:focus-visible .star-1,
+  .null-sparkle-link:hover .star-2,
+  .null-sparkle-link:focus-visible .star-2 {
+    animation: none !important;
+    transform: none !important;
+    opacity: 0.8 !important;
+  }
+}
+
+

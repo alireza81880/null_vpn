@@ -2,7 +2,7 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 
 export interface LiquidButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'purple' | 'danger' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'purple' | 'danger' | 'ghost' | 'neumorphic';
   morphology?: 'pill' | 'ergonomic';
   size?: 'sm' | 'md' | 'lg' | 'icon';
   isLoading?: boolean;
@@ -107,6 +107,16 @@ export const LiquidButton: React.FC<LiquidButtonProps> = ({
       'border border-transparent hover:border-[var(--border-subtle)] hover:bg-[var(--bg-surface-hover)]',
       'active:bg-[var(--bg-surface-elevated)]',
       'focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-2',
+    ].join(' '),
+
+    neumorphic: [
+      // Tactile Soft UI Neumorphic Button
+      'bg-[var(--bg-surface)] text-[var(--text-primary)]',
+      'border border-[var(--border-subtle)]',
+      'shadow-[var(--neo-raised)]',
+      'hover:brightness-105 hover:shadow-[var(--neo-raised-lg)]',
+      'active:shadow-[var(--neo-pressed)] active:translate-y-[1px]',
+      'focus-visible:ring-[var(--accent-primary)] focus-visible:ring-offset-[var(--bg-canvas)]',
     ].join(' '),
   }[variant];
 
