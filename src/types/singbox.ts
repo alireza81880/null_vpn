@@ -69,10 +69,15 @@ export interface SingBoxOutbound {
   };
   transport?: {
     type?: string;
+    mode?: string;
     path?: string;
+    host?: string;
     headers?: Record<string, string>;
     max_early_data?: number;
     early_data_header_name?: string;
+    x_padding_bytes?: string | number;
+    no_grpc_header?: boolean;
+    xmux?: Record<string, any>;
   };
   network?: string;
   system_interface?: boolean;

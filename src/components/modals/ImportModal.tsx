@@ -325,7 +325,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 rows={5}
                 value={rawText}
                 onChange={(e) => setRawText(e.target.value)}
-                placeholder="Paste [Interface] WireGuard config or vless:// / trojan:// / vmess:// URI here..."
+                placeholder="Paste share link (e.g. vless://uuid@host:443?security=reality&type=xhttp...) or WireGuard [Interface] config..."
                 style={{
                   backgroundColor: 'var(--bg-surface-elevated)',
                   borderColor: 'var(--border-glass)',

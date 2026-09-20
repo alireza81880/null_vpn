@@ -69,6 +69,16 @@ export interface WireguardParams {
   mtu?: number;
 }
 
+export interface XHttpParams {
+  mode?: string; // 'auto' | 'stream-up' | 'stream-one' | 'packet-up'
+  path?: string;
+  host?: string;
+  headers?: Record<string, string>;
+  x_padding_bytes?: string | number;
+  no_grpc_header?: boolean;
+  xmux?: Record<string, any>;
+}
+
 export interface TunnelItem {
   id: string;
   name: string;
@@ -86,6 +96,7 @@ export interface TunnelItem {
   wsHost?: string;
   maxEarlyData?: number;
   earlyDataHeaderName?: string;
+  xhttp?: XHttpParams;
   reality?: {
     publicKey?: string;
     shortId?: string;
@@ -96,6 +107,8 @@ export interface TunnelItem {
   packetEncoding?: string;
   alpn?: string[];
   wireguard?: WireguardParams;
+  subscriptionId?: string;
+  subscriptionName?: string;
   rawConfig: string;
   createdAt: number;
 }
@@ -106,4 +119,29 @@ export interface ParseResult {
   success: boolean;
   tunnel?: ParsedTunnel;
   error?: string;
+}
+
+export type SubscriptionFormat = 'plain' | 'base64' | 'singbox-json' | 'clash-yaml' | 'unknown';
+
+export interface SubscriptionParseError {
+  line?: number;
+  raw?: string;
+  error: string;
+}
+
+export interface SubscriptionParseResult {
+  format: SubscriptionFormat;
+  nodes: ParsedTunnel[];
+  errors: SubscriptionParseError[];
+  nodeCount: number;
+  unsupportedMessage?: string;
+}
+
+export interface FetchSubscriptionResult {
+  success: boolean;
+  content?: string;
+  contentType?: string;
+  headers?: Record<string, string>;
+  error?: string;
+  status?: number;
 }

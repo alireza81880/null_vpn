@@ -1,4 +1,4 @@
-import type { ParseResult, ParsedTunnel } from '../types/vpn';
+import type { ParseResult, ParsedTunnel, SubscriptionParseError } from '../types/vpn';
 import { parseVlessUri } from './VlessParser';
 import { parseWireGuardConfig } from './WireguardParser';
 
@@ -197,9 +197,71 @@ export class UriParserFactory {
       return parseWireGuardConfig(text);
     }
 
+    // 7. Detect other unsupported protocols specifically
+    const schemeMatch = text.match(/^([a-zA-Z0-9+.-]+):\/\//);
+    if (schemeMatch) {
+      const scheme = schemeMatch[1].toLowerCase();
+      return {
+        success: false,
+        error: `Unsupported protocol "${scheme}://". Supported: WireGuard (.conf), vless://, trojan://, vmess://, ss://`,
+      };
+    }
+
     return {
       success: false,
       error: 'Unrecognized format. Supported: WireGuard (.conf), vless://, trojan://, vmess://, ss://',
     };
+  }
+
+  /**
+   * Parses multiple lines of proxy share links or raw configurations.
+   * Tolerates comments, whitespace, and preserves individual line errors.
+   */
+  public static parseMultiNodeWithReport(rawText: string): {
+    nodes: ParsedTunnel[];
+    errors: SubscriptionParseError[];
+  } {
+    const text = rawText.trim();
+    if (!text) {
+      return { nodes: [], errors: [] };
+    }
+
+    const lines = text.split(/\r?\n+/);
+    const nodes: ParsedTunnel[] = [];
+    const errors: SubscriptionParseError[] = [];
+
+    lines.forEach((line, index) => {
+      const trimmed = line.trim();
+      // Skip empty lines and non-config comments
+      if (
+        !trimmed ||
+        trimmed.startsWith('#') ||
+        trimmed.startsWith('//') ||
+        trimmed.toLowerCase().startsWith('rem ')
+      ) {
+        return;
+      }
+
+      const result = UriParserFactory.parse(trimmed);
+      if (result.success && result.tunnel) {
+        nodes.push(result.tunnel);
+      } else {
+        errors.push({
+          line: index + 1,
+          raw: trimmed.length > 80 ? `${trimmed.slice(0, 77)}...` : trimmed,
+          error: result.error || 'Failed to parse line configuration',
+        });
+      }
+    });
+
+    return { nodes, errors };
+  }
+
+  /**
+   * Convenience batch parser returning array of ParsedTunnel
+   */
+  public static parseMultiNode(rawText: string): ParsedTunnel[] {
+    const { nodes } = this.parseMultiNodeWithReport(rawText);
+    return nodes;
   }
 }

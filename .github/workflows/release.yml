@@ -55,37 +55,16 @@ jobs:
         with:
           node-version: 22
 
-      - name: Setup Java (JDK 17)
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
-
-      - name: Setup Go (For sing-box Native Core)
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.23'
-
-      - name: Build Official sing-box libbox.aar (v1.10.7)
+      - name: Download sing-box-lx libbox.aar (v1.14.1-lx.8)
         run: |
           mkdir -p android/app/libs
-          LIBBOX_VER="v1.10.7"
-          echo "Cloning official sing-box source at $LIBBOX_VER..."
-          rm -rf /tmp/sing-box
-          git clone --depth 1 --branch "$LIBBOX_VER" https://github.com/SagerNet/sing-box.git /tmp/sing-box
-          cd /tmp/sing-box
+          AAR_URL="https://github.com/Leadaxe/sing-box-lx/releases/download/v1.14.1-lx.8/libbox-1.14.1-lx.8.aar"
+          EXPECTED_SHA256="beab998c9d0a46826db0d654b5315fa6a25d9e1cbf8cb10c547e757444c26d80"
           
-          echo "Installing official sing-box libbox toolchain prerequisites (make lib_install)..."
-          make lib_install
+          echo "Downloading $AAR_URL..."
+          curl -sL "$AAR_URL" -o "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
           
-          echo "Building libbox.aar using official sing-box build tool (make lib_android)..."
-          make lib_android
-          
-          test -s libbox.aar || exit 1
-          cp libbox.aar "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
-          test -s "$GITHUB_WORKSPACE/android/app/libs/libbox.aar" || exit 1
-          
-          echo "SUCCESS: Official sing-box libbox.aar generated and verified:"
+          echo "$EXPECTED_SHA256  $GITHUB_WORKSPACE/android/app/libs/libbox.aar" | sha256sum -c -
           ls -lh "$GITHUB_WORKSPACE/android/app/libs/libbox.aar"
 
       - name: Setup Java (JDK 21 for Capacitor & Android Build)
@@ -111,6 +90,47 @@ jobs:
         run: |
           npm run generate-assets
           npx cap sync android
+
+      - name: Preflight Native Validation (sing-box-lx & Architecture Check)
+        run: |
+          echo "=== Preflight Native Validation ==="
+          
+          # 1. Check libbox.aar presence and non-zero size
+          if [ ! -s "android/app/libs/libbox.aar" ]; then
+            echo "ERROR: android/app/libs/libbox.aar is missing or empty!"
+            exit 1
+          fi
+          echo "✔ libbox.aar exists ($(du -h android/app/libs/libbox.aar | cut -f1))"
+
+          # 2. Inspect classes inside AAR for CommandServer and PlatformInterface
+          unzip -p android/app/libs/libbox.aar classes.jar > /tmp/classes.jar
+          if [ ! -s /tmp/classes.jar ]; then
+            echo "ERROR: Failed to extract classes.jar from libbox.aar"
+            exit 1
+          fi
+
+          if unzip -l /tmp/classes.jar | grep -q "io/nekohasekai/libbox/CommandServer.class"; then
+            echo "✔ io.nekohasekai.libbox.CommandServer verified"
+          else
+            echo "ERROR: io.nekohasekai.libbox.CommandServer missing from libbox.aar"
+            exit 1
+          fi
+
+          if unzip -l /tmp/classes.jar | grep -q "io/nekohasekai/libbox/PlatformInterface.class"; then
+            echo "✔ io.nekohasekai.libbox.PlatformInterface verified"
+          else
+            echo "ERROR: io.nekohasekai.libbox.PlatformInterface missing from libbox.aar"
+            exit 1
+          fi
+
+          # 3. Check JNI architectures packaged inside AAR
+          echo "Packaged JNI architectures inside AAR:"
+          unzip -l android/app/libs/libbox.aar | grep "jni/" | awk '{print $NF}'
+
+          # 4. Check ndk abiFilters in build.gradle
+          grep -A 3 "abiFilters" android/app/build.gradle
+          echo "✔ Architecture configuration verified"
+
       - name: Build Android APK (Release)
         run: |
           cd android

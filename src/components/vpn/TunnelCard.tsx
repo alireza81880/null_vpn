@@ -278,13 +278,27 @@ export const TunnelCard: React.FC<TunnelCardProps> = memo(({
                 {tunnel.security && tunnel.security !== 'none' && (
                   <span
                     style={{
-                      backgroundColor: 'var(--bg-surface-elevated)',
-                      borderColor: 'var(--border-subtle)',
-                      color: 'var(--text-muted)',
+                      backgroundColor: tunnel.security === 'reality' ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-surface-elevated)',
+                      borderColor: tunnel.security === 'reality' ? 'rgba(16, 185, 129, 0.35)' : 'var(--border-subtle)',
+                      color: tunnel.security === 'reality' ? '#34d399' : 'var(--text-muted)',
                     }}
-                    className="text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 uppercase"
+                    className="text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 uppercase font-semibold"
                   >
                     {tunnel.security}
+                  </span>
+                )}
+
+                {/* Transport Type (XHTTP / WS / gRPC) */}
+                {tunnel.type && tunnel.type !== 'tcp' && (
+                  <span
+                    style={{
+                      backgroundColor: tunnel.type === 'xhttp' ? 'rgba(244, 63, 94, 0.12)' : 'rgba(59, 130, 246, 0.12)',
+                      borderColor: tunnel.type === 'xhttp' ? 'rgba(244, 63, 94, 0.35)' : 'rgba(59, 130, 246, 0.35)',
+                      color: tunnel.type === 'xhttp' ? '#fb7185' : '#60a5fa',
+                    }}
+                    className="text-[9px] font-mono px-1.5 py-0.5 rounded border shrink-0 uppercase font-semibold"
+                  >
+                    {tunnel.type}
                   </span>
                 )}
               </div>

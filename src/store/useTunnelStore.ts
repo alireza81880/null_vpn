@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { useAppStore } from './useAppStore';
 import { UriParserFactory } from '../parsers/UriParserFactory';
+import { buildUniversalSingBoxConfig } from '../config/SingboxConfigBuilder';
+import { validateSingBoxConfig } from '../config/ConfigValidator';
 import type {
   TunnelProtocol,
   WireguardParams,
@@ -117,6 +119,17 @@ export const useTunnelStore = create<TunnelStoreState>((set, get) => {
         id: `tunnel-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         createdAt: Date.now(),
       };
+
+      // Pre-validate sing-box config generation and parameters
+      try {
+        const generatedConfig = buildUniversalSingBoxConfig(newTunnel, { isMobile: true });
+        const validation = validateSingBoxConfig(generatedConfig);
+        if (!validation.valid) {
+          return { success: false, error: validation.error || 'Invalid configuration parameters' };
+        }
+      } catch (valErr: any) {
+        return { success: false, error: `Configuration validation error: ${valErr?.message || 'Invalid parameters'}` };
+      }
 
       const updated = [newTunnel, ...get().tunnels];
       set({

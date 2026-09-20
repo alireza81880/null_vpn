@@ -132,6 +132,79 @@ export function buildUniversalSingBoxConfig(
       tlsConfig = baseTls;
     }
 
+    // Determine transport configuration (ws, xhttp, etc.)
+    let transportConfig: Record<string, any> | undefined = undefined;
+    if (tunnel.type === 'ws') {
+      let wsPath = tunnel.path || '/';
+      let maxEarlyData = tunnel.maxEarlyData;
+      let earlyDataHeaderName = tunnel.earlyDataHeaderName;
+
+      // Ensure ed parameter is stripped from path and mapped to sing-box early data options
+      if (wsPath.includes('?')) {
+        const [basePath, search] = wsPath.split('?');
+        const searchParams = new URLSearchParams(search);
+        const edVal = searchParams.get('ed');
+        if (edVal) {
+          const parsedEd = parseInt(edVal, 10);
+          if (!isNaN(parsedEd)) {
+            maxEarlyData = maxEarlyData ?? parsedEd;
+            earlyDataHeaderName = earlyDataHeaderName ?? 'Sec-WebSocket-Protocol';
+          }
+          searchParams.delete('ed');
+        }
+        const remainingSearch = searchParams.toString();
+        wsPath = remainingSearch ? `${basePath}?${remainingSearch}` : (basePath || '/');
+      }
+
+      if (maxEarlyData && !earlyDataHeaderName) {
+        earlyDataHeaderName = 'Sec-WebSocket-Protocol';
+      }
+
+      transportConfig = {
+        type: 'ws',
+        path: wsPath,
+        headers: tunnel.wsHost ? { Host: tunnel.wsHost } : undefined,
+        max_early_data: maxEarlyData,
+        early_data_header_name: maxEarlyData ? (earlyDataHeaderName || 'Sec-WebSocket-Protocol') : undefined,
+      };
+    } else if (tunnel.type === 'xhttp' || tunnel.type === 'splithttp' || tunnel.xhttp) {
+      const x = tunnel.xhttp;
+      const path = x?.path || tunnel.path || '/';
+      const hostHeader = x?.host || tunnel.wsHost || undefined;
+
+      let headers: Record<string, string> | undefined = undefined;
+      if (x?.headers && Object.keys(x.headers).length > 0) {
+        headers = { ...x.headers };
+      }
+      if (hostHeader) {
+        headers = { ...(headers || {}), Host: hostHeader };
+      }
+
+      const xhttpTransport: Record<string, any> = {
+        type: 'xhttp',
+        mode: x?.mode || 'auto',
+        path: path,
+      };
+
+      if (hostHeader) {
+        xhttpTransport.host = hostHeader;
+      }
+      if (headers && Object.keys(headers).length > 0) {
+        xhttpTransport.headers = headers;
+      }
+      if (x?.x_padding_bytes !== undefined) {
+        xhttpTransport.x_padding_bytes = x.x_padding_bytes;
+      }
+      if (x?.no_grpc_header !== undefined) {
+        xhttpTransport.no_grpc_header = x.no_grpc_header;
+      }
+      if (x?.xmux !== undefined && Object.keys(x.xmux).length > 0) {
+        xhttpTransport.xmux = x.xmux;
+      }
+
+      transportConfig = xhttpTransport;
+    }
+
     proxyOutbound = {
       type: 'vless',
       tag: 'proxy-out',
@@ -141,43 +214,7 @@ export function buildUniversalSingBoxConfig(
       flow: tunnel.flow || undefined,
       packet_encoding: tunnel.packetEncoding || undefined,
       tls: tlsConfig,
-      transport:
-        tunnel.type === 'ws'
-          ? (() => {
-              let wsPath = tunnel.path || '/';
-              let maxEarlyData = tunnel.maxEarlyData;
-              let earlyDataHeaderName = tunnel.earlyDataHeaderName;
-
-              // Ensure ed parameter is stripped from path and mapped to sing-box early data options
-              if (wsPath.includes('?')) {
-                const [basePath, search] = wsPath.split('?');
-                const searchParams = new URLSearchParams(search);
-                const edVal = searchParams.get('ed');
-                if (edVal) {
-                  const parsedEd = parseInt(edVal, 10);
-                  if (!isNaN(parsedEd)) {
-                    maxEarlyData = maxEarlyData ?? parsedEd;
-                    earlyDataHeaderName = earlyDataHeaderName ?? 'Sec-WebSocket-Protocol';
-                  }
-                  searchParams.delete('ed');
-                }
-                const remainingSearch = searchParams.toString();
-                wsPath = remainingSearch ? `${basePath}?${remainingSearch}` : (basePath || '/');
-              }
-
-              if (maxEarlyData && !earlyDataHeaderName) {
-                earlyDataHeaderName = 'Sec-WebSocket-Protocol';
-              }
-
-              return {
-                type: 'ws',
-                path: wsPath,
-                headers: tunnel.wsHost ? { Host: tunnel.wsHost } : undefined,
-                max_early_data: maxEarlyData,
-                early_data_header_name: maxEarlyData ? (earlyDataHeaderName || 'Sec-WebSocket-Protocol') : undefined,
-              };
-            })()
-          : undefined,
+      transport: transportConfig,
     };
   } else if (protocol === 'trojan' && isTunnelItem) {
     const host = tunnel.host || tunnel.endpoint.split(':')[0] || '127.0.0.1';

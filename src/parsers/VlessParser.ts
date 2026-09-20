@@ -13,7 +13,12 @@ import type { ParseResult, ParsedTunnel } from '../types/vpn';
  */
 export function parseVlessUri(rawUri: string): ParseResult {
   try {
-    const uri = new URL(rawUri);
+    let normalizedRaw = rawUri.trim();
+    if (!normalizedRaw.toLowerCase().startsWith('vless://')) {
+      return { success: false, error: 'Invalid link format: Must start with vless://' };
+    }
+
+    const uri = new URL(normalizedRaw);
     const uuid = uri.username;
     const host = uri.hostname;
     const port = parseInt(uri.port || '443', 10);
@@ -22,8 +27,18 @@ export function parseVlessUri(rawUri: string): ParseResult {
     if (!uuid) {
       return { success: false, error: 'VLESS URI missing UUID credentials' };
     }
+
+    const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$|^[0-9a-fA-F]{32}$/;
+    if (!uuidRegex.test(uuid)) {
+      return { success: false, error: 'Invalid UUID: Must be a standard 32 or 36 character hexadecimal UUID' };
+    }
+
     if (!host) {
       return { success: false, error: 'VLESS URI missing remote host address' };
+    }
+
+    if (isNaN(port) || port <= 0 || port > 65535) {
+      return { success: false, error: `Invalid port "${uri.port}": Must be a number between 1 and 65535` };
     }
 
     const params = uri.searchParams;
@@ -70,6 +85,10 @@ export function parseVlessUri(rawUri: string): ParseResult {
     const publicKey = params.get('pbk') || params.get('public_key') || undefined;
     const shortId = params.get('sid') || params.get('short_id') || undefined;
 
+    if (security === 'reality' && !publicKey) {
+      return { success: false, error: 'Invalid Reality parameters: Missing public key (pbk/public_key)' };
+    }
+
     // uTLS fingerprint with aliases (fp / fingerprint)
     const fingerprint = params.get('fp') || params.get('fingerprint') || undefined;
 
@@ -97,6 +116,61 @@ export function parseVlessUri(rawUri: string): ParseResult {
           }
         : undefined;
 
+    // XHTTP / SplitHTTP transport parsing
+    const normalizedType = type === 'splithttp' ? 'xhttp' : type;
+    let xhttp: import('../types/vpn').XHttpParams | undefined = undefined;
+    if (normalizedType === 'xhttp') {
+      const mode = params.get('mode') || params.get('xhttp_mode') || 'auto';
+      const validModes = ['auto', 'stream-up', 'stream-one', 'packet-up'];
+      if (!validModes.includes(mode)) {
+        return {
+          success: false,
+          error: `Invalid XHTTP configuration: Unsupported mode "${mode}". Supported: ${validModes.join(', ')}`,
+        };
+      }
+
+      const xhttpHost = params.get('host') || params.get('xhttp_host') || undefined;
+      const xPadding = params.get('x_padding_bytes') || params.get('x_padding') || params.get('padding') || undefined;
+      const noGrpcHeaderParam = params.get('no_grpc_header');
+      const noGrpcHeader =
+        noGrpcHeaderParam === '1' || noGrpcHeaderParam === 'true'
+          ? true
+          : noGrpcHeaderParam === '0' || noGrpcHeaderParam === 'false'
+            ? false
+            : undefined;
+
+      let xhttpHeaders: Record<string, string> | undefined = undefined;
+      const rawHeaders = params.get('headers') || params.get('extra');
+      if (rawHeaders) {
+        try {
+          xhttpHeaders = JSON.parse(rawHeaders);
+        } catch {
+          return {
+            success: false,
+            error: 'Invalid XHTTP configuration: Malformed JSON in headers/extra parameter',
+          };
+        }
+      }
+
+      let xmux: Record<string, any> | undefined = undefined;
+      const rawXmux = params.get('xmux');
+      if (rawXmux) {
+        try {
+          xmux = JSON.parse(rawXmux);
+        } catch {}
+      }
+
+      xhttp = {
+        mode,
+        path: cleanPath || '/',
+        host: xhttpHost,
+        headers: xhttpHeaders,
+        x_padding_bytes: xPadding,
+        no_grpc_header: noGrpcHeader,
+        xmux,
+      };
+    }
+
     const tunnel: ParsedTunnel = {
       name,
       protocol: 'vless',
@@ -106,13 +180,14 @@ export function parseVlessUri(rawUri: string): ParseResult {
       uuidOrPassword: uuid,
       security,
       sni,
-      type,
+      type: normalizedType,
       flow,
       path: cleanPath,
       insecure,
       wsHost,
       maxEarlyData,
       earlyDataHeaderName,
+      xhttp,
       reality,
       utls,
       packetEncoding,

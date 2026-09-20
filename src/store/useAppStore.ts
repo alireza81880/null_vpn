@@ -200,8 +200,10 @@ export const useAppStore = create<AppState>((set, get) => {
       };
 
       const updatedConfigs = [...get().configs, newConfig];
-      localStorage.setItem(STORAGE_KEYS.CONFIGS, JSON.stringify(updatedConfigs));
-      localStorage.setItem(STORAGE_KEYS.ACTIVE_CONFIG_ID, newId);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.CONFIGS, JSON.stringify(updatedConfigs));
+        localStorage.setItem(STORAGE_KEYS.ACTIVE_CONFIG_ID, newId);
+      }
 
       set({
         configs: updatedConfigs,
@@ -214,7 +216,9 @@ export const useAppStore = create<AppState>((set, get) => {
 
     updateConfig: (id: string, updates: Partial<WireguardTunnelConfig>) => {
       const updatedConfigs = get().configs.map((c) => (c.id === id ? { ...c, ...updates } : c));
-      localStorage.setItem(STORAGE_KEYS.CONFIGS, JSON.stringify(updatedConfigs));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.CONFIGS, JSON.stringify(updatedConfigs));
+      }
 
       const activeId = get().activeConfigId;
       const isEditingActive = activeId === id || get().activeConfig?.id === id;
@@ -233,11 +237,13 @@ export const useAppStore = create<AppState>((set, get) => {
       const isRemovingActive = get().activeConfigId === id;
       const nextActive = isRemovingActive ? remaining[0]?.id ?? null : get().activeConfigId;
 
-      localStorage.setItem(STORAGE_KEYS.CONFIGS, JSON.stringify(remaining));
-      if (nextActive) {
-        localStorage.setItem(STORAGE_KEYS.ACTIVE_CONFIG_ID, nextActive);
-      } else {
-        localStorage.removeItem(STORAGE_KEYS.ACTIVE_CONFIG_ID);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(STORAGE_KEYS.CONFIGS, JSON.stringify(remaining));
+        if (nextActive) {
+          localStorage.setItem(STORAGE_KEYS.ACTIVE_CONFIG_ID, nextActive);
+        } else {
+          localStorage.removeItem(STORAGE_KEYS.ACTIVE_CONFIG_ID);
+        }
       }
 
       // If disconnected or connecting with this config, reset connection

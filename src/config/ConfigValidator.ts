@@ -121,6 +121,23 @@ export function validateSingBoxConfig(
         }
       }
     }
+
+    // XHTTP transport validation
+    const transport = proxyOut.transport as Record<string, any> | undefined;
+    if (transport?.type === 'xhttp') {
+      if (transport.mode && typeof transport.mode !== 'string') {
+        return { valid: false, error: 'XHTTP transport mode must be a valid string' };
+      }
+      if (transport.path && typeof transport.path !== 'string') {
+        return { valid: false, error: 'XHTTP transport path must be a string' };
+      }
+      if (transport.host && typeof transport.host !== 'string') {
+        return { valid: false, error: 'XHTTP transport host must be a string' };
+      }
+      if (transport.headers && (typeof transport.headers !== 'object' || Array.isArray(transport.headers))) {
+        return { valid: false, error: 'XHTTP transport headers must be an object key-value map' };
+      }
+    }
   } else if (proxyOut.type === 'trojan') {
     if (!proxyOut.server) {
       return { valid: false, error: 'Trojan outbound requires a valid server address' };
