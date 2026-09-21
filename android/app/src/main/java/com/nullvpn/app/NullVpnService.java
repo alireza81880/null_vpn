@@ -111,42 +111,88 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                 throw new IllegalArgumentException("sing-box configuration contains an empty 'outbounds' array");
             }
 
-            // Inspect the primary proxy outbound
-            JSONObject primaryOutbound = null;
-            for (int i = 0; i < outbounds.length(); i++) {
-                JSONObject o = outbounds.getJSONObject(i);
-                String tag = o.optString("tag", "");
-                if ("proxy-out".equals(tag)) {
-                    primaryOutbound = o;
-                    break;
+            // Inspect the primary proxy: check endpoints first (WireGuard v1.14.1), then outbounds
+            JSONObject primaryProxy = null;
+            String type = "";
+            boolean isEndpoint = false;
+
+            if (root.has("endpoints")) {
+                JSONArray endpoints = root.optJSONArray("endpoints");
+                if (endpoints != null && endpoints.length() > 0) {
+                    for (int i = 0; i < endpoints.length(); i++) {
+                        JSONObject ep = endpoints.getJSONObject(i);
+                        String epTag = ep.optString("tag", "");
+                        if ("proxy-out".equals(epTag)) {
+                            primaryProxy = ep;
+                            type = ep.optString("type", "");
+                            isEndpoint = true;
+                            break;
+                        }
+                    }
+                    if (primaryProxy == null) {
+                        JSONObject ep0 = endpoints.getJSONObject(0);
+                        if ("wireguard".equalsIgnoreCase(ep0.optString("type", ""))) {
+                            primaryProxy = ep0;
+                            type = "wireguard";
+                            isEndpoint = true;
+                        }
+                    }
                 }
             }
-            if (primaryOutbound == null) {
-                primaryOutbound = outbounds.getJSONObject(0);
+
+            if (primaryProxy == null) {
+                for (int i = 0; i < outbounds.length(); i++) {
+                    JSONObject o = outbounds.getJSONObject(i);
+                    String tag = o.optString("tag", "");
+                    if ("proxy-out".equals(tag)) {
+                        primaryProxy = o;
+                        type = o.optString("type", "");
+                        break;
+                    }
+                }
+                if (primaryProxy == null) {
+                    primaryProxy = outbounds.getJSONObject(0);
+                    type = primaryProxy.optString("type", "");
+                }
             }
 
-            String type = primaryOutbound.optString("type", "");
             if (type.isEmpty()) {
-                throw new IllegalArgumentException("Primary outbound is missing a protocol 'type'");
+                throw new IllegalArgumentException("Primary outbound/endpoint is missing a protocol 'type'");
             }
 
             if ("wireguard".equalsIgnoreCase(type)) {
-                String server = primaryOutbound.optString("server", "");
-                String privateKey = primaryOutbound.optString("private_key", "");
-                String peerPublicKey = primaryOutbound.optString("peer_public_key", "");
-
-                if (server.isEmpty()) {
-                    throw new IllegalArgumentException("WireGuard outbound missing 'server' address");
-                }
+                String privateKey = primaryProxy.optString("private_key", "");
                 if (privateKey.isEmpty()) {
-                    throw new IllegalArgumentException("WireGuard outbound missing required 'private_key'");
+                    throw new IllegalArgumentException("WireGuard configuration missing required 'private_key'");
                 }
-                if (peerPublicKey.isEmpty()) {
-                    throw new IllegalArgumentException("WireGuard outbound missing required 'peer_public_key'");
+
+                JSONArray peers = primaryProxy.optJSONArray("peers");
+                if (isEndpoint || (peers != null && peers.length() > 0)) {
+                    if (peers == null || peers.length() == 0) {
+                        throw new IllegalArgumentException("WireGuard endpoint missing required 'peers' array");
+                    }
+                    JSONObject peer0 = peers.getJSONObject(0);
+                    String peerAddr = peer0.optString("address", peer0.optString("server", ""));
+                    String peerPubKey = peer0.optString("public_key", "");
+                    if (peerAddr.isEmpty()) {
+                        throw new IllegalArgumentException("WireGuard peer missing 'address' / 'server'");
+                    }
+                    if (peerPubKey.isEmpty()) {
+                        throw new IllegalArgumentException("WireGuard peer missing required 'public_key'");
+                    }
+                } else {
+                    String server = primaryProxy.optString("server", "");
+                    String peerPublicKey = primaryProxy.optString("peer_public_key", "");
+                    if (server.isEmpty()) {
+                        throw new IllegalArgumentException("WireGuard outbound missing 'server' address");
+                    }
+                    if (peerPublicKey.isEmpty()) {
+                        throw new IllegalArgumentException("WireGuard outbound missing required 'peer_public_key'");
+                    }
                 }
             } else if ("vless".equalsIgnoreCase(type)) {
-                String server = primaryOutbound.optString("server", "");
-                String uuid = primaryOutbound.optString("uuid", "");
+                String server = primaryProxy.optString("server", "");
+                String uuid = primaryProxy.optString("uuid", "");
                 if (server.isEmpty()) {
                     throw new IllegalArgumentException("VLESS outbound missing 'server' address");
                 }
@@ -154,8 +200,8 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                     throw new IllegalArgumentException("VLESS outbound missing 'uuid'");
                 }
             } else if ("trojan".equalsIgnoreCase(type)) {
-                String server = primaryOutbound.optString("server", "");
-                String password = primaryOutbound.optString("password", "");
+                String server = primaryProxy.optString("server", "");
+                String password = primaryProxy.optString("password", "");
                 if (server.isEmpty()) {
                     throw new IllegalArgumentException("Trojan outbound missing 'server' address");
                 }
@@ -249,11 +295,38 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             // Extract remote endpoint for latency telemetry
             try {
                 JSONObject root = new JSONObject(configJson);
-                JSONArray outbounds = root.optJSONArray("outbounds");
-                if (outbounds != null && outbounds.length() > 0) {
-                    JSONObject pOut = outbounds.getJSONObject(0);
-                    currentServerHost = pOut.optString("server", "1.1.1.1");
-                    currentServerPort = pOut.optInt("server_port", 53);
+                JSONArray endpoints = root.optJSONArray("endpoints");
+                if (endpoints != null && endpoints.length() > 0) {
+                    for (int i = 0; i < endpoints.length(); i++) {
+                        JSONObject ep = endpoints.getJSONObject(i);
+                        JSONArray peers = ep.optJSONArray("peers");
+                        if (peers != null && peers.length() > 0) {
+                            JSONObject p = peers.getJSONObject(0);
+                            String addr = p.optString("address", p.optString("server", ""));
+                            int port = p.optInt("port", p.optInt("server_port", 51820));
+                            if (!addr.isEmpty()) {
+                                currentServerHost = addr;
+                                currentServerPort = port;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if ("1.1.1.1".equals(currentServerHost)) {
+                    JSONArray outbounds = root.optJSONArray("outbounds");
+                    if (outbounds != null && outbounds.length() > 0) {
+                        for (int i = 0; i < outbounds.length(); i++) {
+                            JSONObject o = outbounds.getJSONObject(i);
+                            if ("proxy-out".equals(o.optString("tag", "")) || i == 0) {
+                                String server = o.optString("server", "");
+                                if (!server.isEmpty()) {
+                                    currentServerHost = server;
+                                    currentServerPort = o.optInt("server_port", 443);
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
             } catch (Exception ignored) {}
 

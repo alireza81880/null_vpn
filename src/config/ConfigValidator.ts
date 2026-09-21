@@ -31,36 +31,56 @@ export function validateSingBoxConfig(
     return { valid: false, error: 'Configuration must contain at least one outbound' };
   }
 
-  // Find the primary proxy outbound (first outbound or tagged proxy-out)
-  const proxyOut =
-    parsed.outbounds.find((o) => o.tag === 'proxy-out') || parsed.outbounds[0];
+  // Find the primary proxy (check endpoints first for WireGuard v1.14.1, then outbounds)
+  let proxyItem: Record<string, any> | undefined = undefined;
+  let isEndpoint = false;
 
-  if (!proxyOut || !proxyOut.type) {
-    return { valid: false, error: 'Primary outbound is missing a valid protocol type' };
+  if (Array.isArray(parsed.endpoints) && parsed.endpoints.length > 0) {
+    const ep =
+      parsed.endpoints.find((e: any) => e.tag === 'proxy-out') ||
+      parsed.endpoints.find((e: any) => e.type === 'wireguard') ||
+      parsed.endpoints[0];
+    if (ep && typeof ep === 'object' && ep.type) {
+      proxyItem = ep as Record<string, any>;
+      isEndpoint = true;
+    }
   }
 
-  if (proxyOut.type === 'wireguard') {
-    if (!proxyOut.server || typeof proxyOut.server !== 'string' || !proxyOut.server.trim()) {
-      return { valid: false, error: 'WireGuard outbound requires a valid server endpoint' };
+  if (!proxyItem) {
+    proxyItem =
+      parsed.outbounds.find((o) => o.tag === 'proxy-out') || parsed.outbounds[0];
+  }
+
+  if (!proxyItem || !proxyItem.type) {
+    return { valid: false, error: 'Primary outbound/endpoint is missing a valid protocol type' };
+  }
+
+  const proxyOut = proxyItem;
+
+  if (proxyItem.type === 'wireguard') {
+    if (!proxyItem.private_key || typeof proxyItem.private_key !== 'string' || !proxyItem.private_key.trim()) {
+      return { valid: false, error: 'WireGuard configuration requires a non-empty private_key' };
     }
-    if (!proxyOut.server_port || typeof proxyOut.server_port !== 'number' || proxyOut.server_port <= 0 || proxyOut.server_port > 65535) {
-      return { valid: false, error: 'WireGuard outbound requires a valid server_port (1-65535)' };
-    }
-    if (!proxyOut.private_key || typeof proxyOut.private_key !== 'string' || !proxyOut.private_key.trim()) {
-      return { valid: false, error: 'WireGuard outbound requires a non-empty private_key' };
-    }
-    if (!proxyOut.peer_public_key || typeof proxyOut.peer_public_key !== 'string' || !proxyOut.peer_public_key.trim()) {
-      return { valid: false, error: 'WireGuard outbound requires a non-empty peer_public_key' };
-    }
-    if (!proxyOut.local_address || !Array.isArray(proxyOut.local_address) || proxyOut.local_address.length === 0) {
-      return { valid: false, error: 'WireGuard outbound requires non-empty local_address prefixes' };
-    }
-    if (proxyOut.peers && Array.isArray(proxyOut.peers)) {
-      if (proxyOut.peers.length === 0) {
-        return { valid: false, error: 'WireGuard peers array must contain at least one peer when specified' };
+
+    if (isEndpoint || (proxyItem.peers && Array.isArray(proxyItem.peers) && proxyItem.peers.length > 0)) {
+      // Modern sing-box v1.14.1 endpoint structure
+      const addrList = proxyItem.address || proxyItem.local_address;
+      if (!addrList || !Array.isArray(addrList) || addrList.length === 0) {
+        return { valid: false, error: 'WireGuard endpoint requires non-empty address prefixes' };
       }
-      for (let i = 0; i < proxyOut.peers.length; i++) {
-        const peer = proxyOut.peers[i];
+      if (!Array.isArray(proxyItem.peers) || proxyItem.peers.length === 0) {
+        return { valid: false, error: 'WireGuard endpoint requires at least one peer in peers array' };
+      }
+      for (let i = 0; i < proxyItem.peers.length; i++) {
+        const peer = proxyItem.peers[i];
+        const peerHost = peer.address || peer.server;
+        if (!peerHost || typeof peerHost !== 'string' || !peerHost.trim()) {
+          return { valid: false, error: `WireGuard peer[${i}] requires a valid address/server endpoint` };
+        }
+        const peerPort = peer.port ?? peer.server_port;
+        if (typeof peerPort !== 'number' || peerPort <= 0 || peerPort > 65535) {
+          return { valid: false, error: `WireGuard peer[${i}] requires a valid port (1-65535)` };
+        }
         if (!peer.public_key || typeof peer.public_key !== 'string' || !peer.public_key.trim()) {
           return { valid: false, error: `WireGuard peer[${i}] requires a valid public_key` };
         }
@@ -71,8 +91,22 @@ export function validateSingBoxConfig(
           return { valid: false, error: `WireGuard peer[${i}] reserved field must contain exactly 3 bytes` };
         }
       }
+    } else {
+      // Legacy outbound format fallback
+      if (!proxyItem.server || typeof proxyItem.server !== 'string' || !proxyItem.server.trim()) {
+        return { valid: false, error: 'WireGuard outbound requires a valid server endpoint' };
+      }
+      if (!proxyItem.server_port || typeof proxyItem.server_port !== 'number' || proxyItem.server_port <= 0 || proxyItem.server_port > 65535) {
+        return { valid: false, error: 'WireGuard outbound requires a valid server_port (1-65535)' };
+      }
+      if (!proxyItem.peer_public_key || typeof proxyItem.peer_public_key !== 'string' || !proxyItem.peer_public_key.trim()) {
+        return { valid: false, error: 'WireGuard outbound requires a non-empty peer_public_key' };
+      }
+      if (!proxyItem.local_address || !Array.isArray(proxyItem.local_address) || proxyItem.local_address.length === 0) {
+        return { valid: false, error: 'WireGuard outbound requires non-empty local_address prefixes' };
+      }
     }
-  } else if (proxyOut.type === 'vless') {
+  } else if (proxyItem.type === 'vless') {
     if (!proxyOut.server || typeof proxyOut.server !== 'string' || !proxyOut.server.trim()) {
       return { valid: false, error: 'VLESS outbound requires a valid server address' };
     }
@@ -125,6 +159,9 @@ export function validateSingBoxConfig(
     // XHTTP transport validation
     const transport = proxyOut.transport as Record<string, any> | undefined;
     if (transport?.type === 'xhttp') {
+      if (proxyOut.flow === 'xtls-rprx-vision') {
+        return { valid: false, error: 'XTLS Vision flow (xtls-rprx-vision) is incompatible with XHTTP transport' };
+      }
       if (transport.mode && typeof transport.mode !== 'string') {
         return { valid: false, error: 'XHTTP transport mode must be a valid string' };
       }

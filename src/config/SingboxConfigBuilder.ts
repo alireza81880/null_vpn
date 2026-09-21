@@ -1,10 +1,15 @@
-import type { SingBoxConfigObject, SingBoxOutbound } from '../types/singbox';
+import type {
+  SingBoxConfigObject,
+  SingBoxOutbound,
+  SingBoxWireGuardEndpoint,
+  SingBoxWireGuardPeerEndpoint,
+} from '../types/singbox';
 import type { WireguardTunnelConfig, TunnelItem } from '../types/vpn';
 
 /**
  * Universal Sing-Box Config Generator.
  * Converts either a normalized TunnelItem (WireGuard/VLESS/Trojan/VMess/Shadowsocks) or
- * a legacy WireguardTunnelConfig into a standard, fully-formed sing-box v1.10.7 JSON configuration.
+ * a legacy WireguardTunnelConfig into a standard, fully-formed sing-box v1.14.1-lx.8 JSON configuration.
  *
  * Architectural constraints:
  * - Pure deterministic transformation
@@ -21,7 +26,9 @@ export function buildUniversalSingBoxConfig(
   const isTunnelItem = 'protocol' in tunnel;
   const protocol = isTunnelItem ? tunnel.protocol : 'wireguard';
 
-  let proxyOutbound: SingBoxOutbound;
+  let proxyOutbound: SingBoxOutbound | undefined = undefined;
+  let wireguardEndpoint: SingBoxWireGuardEndpoint | undefined = undefined;
+  let proxyHost: string | undefined = undefined;
 
   if (protocol === 'wireguard') {
     const wgParams = isTunnelItem ? tunnel.wireguard : (tunnel as WireguardTunnelConfig).interface;
@@ -48,6 +55,8 @@ export function buildUniversalSingBoxConfig(
       if (!isNaN(parsedPort)) port = parsedPort;
     }
 
+    proxyHost = host;
+
     let localAddress: string[] = ['10.14.0.2/32'];
     if (wgParams?.address) {
       const splitAddresses = wgParams.address
@@ -62,8 +71,9 @@ export function buildUniversalSingBoxConfig(
     const peerPublicKey = (peerParams?.publicKey || '').trim();
     const preSharedKey = (peerParams?.preSharedKey || '').trim() || undefined;
     const reserved = peerParams?.reserved || [0, 0, 0];
+    const persistentKeepalive = peerParams?.persistentKeepalive;
 
-    // Preserve WireGuard AllowedIPs strictly according to sing-box v1.10.7 schema
+    // Preserve WireGuard AllowedIPs strictly according to sing-box v1.14.1 schema
     const rawAllowedIPs = peerParams?.allowedIPs || '0.0.0.0/0, ::/0';
     const allowedIpsList = rawAllowedIPs
       .split(',')
@@ -71,33 +81,34 @@ export function buildUniversalSingBoxConfig(
       .filter(Boolean);
     const finalAllowedIps = allowedIpsList.length > 0 ? allowedIpsList : ['0.0.0.0/0', '::/0'];
 
-    proxyOutbound = {
+    const peerObj: SingBoxWireGuardPeerEndpoint = {
+      address: host,
+      port,
+      public_key: peerPublicKey,
+      allowed_ips: finalAllowedIps,
+      reserved,
+    };
+    if (preSharedKey) {
+      peerObj.pre_shared_key = preSharedKey;
+    }
+    if (persistentKeepalive !== undefined && persistentKeepalive > 0) {
+      peerObj.persistent_keepalive_interval = persistentKeepalive;
+    }
+
+    wireguardEndpoint = {
       type: 'wireguard',
       tag: 'proxy-out',
-      server: host,
-      server_port: port,
-      local_address: localAddress,
-      private_key: privateKey,
-      peer_public_key: peerPublicKey,
-      pre_shared_key: preSharedKey,
-      peers: [
-        {
-          server: host,
-          server_port: port,
-          public_key: peerPublicKey,
-          pre_shared_key: preSharedKey,
-          allowed_ips: finalAllowedIps,
-          reserved,
-        },
-      ],
-      reserved,
+      system: false,
       mtu: wgParams?.mtu || 1420,
-      system_interface: false,
+      address: localAddress,
+      private_key: privateKey,
+      peers: [peerObj],
     };
   } else if (protocol === 'vless' && isTunnelItem) {
     const host = tunnel.host || tunnel.endpoint.split(':')[0] || '127.0.0.1';
     const port = tunnel.port || 443;
     const uuid = tunnel.uuidOrPassword || '';
+    proxyHost = host;
     const isReality = tunnel.security === 'reality';
     const isTls = tunnel.security === 'tls';
     const hasTls = isTls || isReality;
@@ -115,8 +126,8 @@ export function buildUniversalSingBoxConfig(
       }
 
       if (isReality) {
-        // In sing-box v1.10.7, uTLS is required by reality client
-        const fp = tunnel.utls?.fingerprint || 'chrome';
+        // In sing-box v1.14.1, uTLS is required by reality client
+        const fp = tunnel.utls?.fingerprint || (tunnel as any).fingerprint || 'chrome';
         baseTls.utls = {
           enabled: true,
           fingerprint: fp,
@@ -124,8 +135,13 @@ export function buildUniversalSingBoxConfig(
 
         baseTls.reality = {
           enabled: true,
-          public_key: tunnel.reality?.publicKey || '',
-          short_id: tunnel.reality?.shortId !== undefined ? tunnel.reality.shortId : undefined,
+          public_key: tunnel.reality?.publicKey || (tunnel as any).publicKey || '',
+          short_id:
+            tunnel.reality?.shortId !== undefined
+              ? tunnel.reality.shortId
+              : (tunnel as any).shortId !== undefined
+                ? (tunnel as any).shortId
+                : undefined,
         };
       }
 
@@ -211,7 +227,7 @@ export function buildUniversalSingBoxConfig(
       server: host,
       server_port: port,
       uuid,
-      flow: tunnel.flow || undefined,
+      flow: transportConfig?.type === 'xhttp' ? undefined : (tunnel.flow || undefined),
       packet_encoding: tunnel.packetEncoding || undefined,
       tls: tlsConfig,
       transport: transportConfig,
@@ -220,6 +236,7 @@ export function buildUniversalSingBoxConfig(
     const host = tunnel.host || tunnel.endpoint.split(':')[0] || '127.0.0.1';
     const port = tunnel.port || 443;
     const password = tunnel.uuidOrPassword || '';
+    proxyHost = host;
 
     proxyOutbound = {
       type: 'trojan',
@@ -236,6 +253,7 @@ export function buildUniversalSingBoxConfig(
     const host = tunnel.host || tunnel.endpoint.split(':')[0] || '127.0.0.1';
     const port = tunnel.port || 443;
     const uuid = (tunnel.uuidOrPassword || '').trim();
+    proxyHost = host;
 
     if (!uuid) {
       throw new Error('Invalid VMess configuration: missing required user UUID');
@@ -275,6 +293,7 @@ export function buildUniversalSingBoxConfig(
     const host = tunnel.host || tunnel.endpoint.split(':')[0] || '127.0.0.1';
     const port = tunnel.port || 8388;
     const password = tunnel.uuidOrPassword || '';
+    proxyHost = host;
 
     proxyOutbound = {
       type: 'shadowsocks',
@@ -291,7 +310,7 @@ export function buildUniversalSingBoxConfig(
     };
   }
 
-  // Build the complete sing-box configuration document
+  // Build the complete sing-box configuration document for sing-box-lx v1.14.1-lx.8
   const config: SingBoxConfigObject = {
     log: {
       disabled: false,
@@ -302,31 +321,28 @@ export function buildUniversalSingBoxConfig(
       servers: [
         {
           tag: 'dns-remote',
-          address: 'tcp://1.1.1.1',
+          type: 'tcp',
+          server: '1.1.1.1',
+          server_port: 53,
           detour: 'proxy-out',
         },
         {
           tag: 'dns-direct',
-          address: 'local',
+          type: 'local',
           detour: 'direct',
         },
       ],
       rules: [
-        ...(proxyOutbound.type === 'vless' &&
-        proxyOutbound.server &&
-        !/^(\d{1,3}\.){3}\d{1,3}$/.test(proxyOutbound.server) &&
-        !proxyOutbound.server.includes(':')
+        ...(proxyHost &&
+        !/^(\d{1,3}\.){3}\d{1,3}$/.test(proxyHost) &&
+        !proxyHost.includes(':')
           ? [
               {
-                domain: [proxyOutbound.server],
+                domain: [proxyHost],
                 server: 'dns-direct',
               },
             ]
           : []),
-        {
-          outbound: 'any',
-          server: 'dns-direct',
-        },
       ],
       final: 'dns-remote',
       strategy: 'prefer_ipv4',
@@ -336,20 +352,16 @@ export function buildUniversalSingBoxConfig(
         type: 'tun',
         tag: 'tun-in',
         interface_name: isMobile ? 'tun0' : 'null-vpn0',
-        inet4_address: '172.19.0.1/30',
+        address: ['172.19.0.1/30'],
         mtu: 1500,
         auto_route: true,
         strict_route: false,
         stack: 'gvisor',
-        sniff: true,
       },
     ],
+    ...(wireguardEndpoint ? { endpoints: [wireguardEndpoint] } : {}),
     outbounds: [
-      proxyOutbound,
-      {
-        type: 'dns' as any,
-        tag: 'dns-out',
-      },
+      ...(proxyOutbound ? [proxyOutbound] : []),
       {
         type: 'direct',
         tag: 'direct',
@@ -362,8 +374,15 @@ export function buildUniversalSingBoxConfig(
     route: {
       rules: [
         {
+          action: 'sniff',
+        },
+        {
           protocol: 'dns',
-          outbound: 'dns-out',
+          action: 'hijack-dns',
+        },
+        {
+          port: 53,
+          action: 'hijack-dns',
         },
         {
           ip_is_private: true,
@@ -374,6 +393,7 @@ export function buildUniversalSingBoxConfig(
         },
       ],
       auto_detect_interface: true,
+      final: 'proxy-out',
     },
   };
 

@@ -41,6 +41,29 @@ export interface SingBoxWireGuardPeer {
   reserved?: number[];
 }
 
+export interface SingBoxWireGuardPeerEndpoint {
+  address: string;
+  port: number;
+  public_key: string;
+  pre_shared_key?: string;
+  allowed_ips: string[];
+  reserved?: number[];
+  persistent_keepalive_interval?: number;
+}
+
+export interface SingBoxWireGuardEndpoint {
+  type: 'wireguard';
+  tag: string;
+  system?: boolean;
+  mtu?: number;
+  address: string[];
+  private_key: string;
+  peers: SingBoxWireGuardPeerEndpoint[];
+  [key: string]: unknown;
+}
+
+export type SingBoxEndpoint = SingBoxWireGuardEndpoint | Record<string, unknown>;
+
 /**
  * Sing-box Universal Inbound/Outbound Configuration Structure
  * Supports VLESS, Reality, Hysteria2, Trojan, WireGuard, VMess, and Shadowsocks
@@ -101,6 +124,7 @@ export interface SingBoxConfigObject {
   };
   dns?: Record<string, unknown>;
   inbounds?: Array<Record<string, unknown>>;
+  endpoints?: SingBoxEndpoint[];
   outbounds?: SingBoxOutbound[];
   route?: Record<string, unknown>;
   experimental?: {
