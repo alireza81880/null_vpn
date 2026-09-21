@@ -173,26 +173,6 @@ export const useTunnelStore = create<TunnelStoreState>((set, get) => {
         } catch (err) {
           console.warn('Failed to mirror WireGuard configuration to AppStore:', err);
         }
-      } else {
-        // Mirror non-WireGuard proxy configs into useAppStore as well with standard interface mock
-        try {
-          useAppStore.getState().addConfig({
-            id: newTunnel.id,
-            name: newTunnel.name,
-            endpoint: newTunnel.endpoint,
-            interface: {
-              address: '10.14.0.2/32',
-              dns: '1.1.1.1',
-            },
-            peer: {
-              endpoint: newTunnel.endpoint,
-              allowedIPs: '0.0.0.0/0',
-            },
-            rawConfig: newTunnel.rawConfig,
-          });
-        } catch (err) {
-          console.warn('Failed to mirror proxy configuration to AppStore:', err);
-        }
       }
 
       return { success: true, tunnel: newTunnel };
@@ -286,21 +266,6 @@ export const useTunnelStore = create<TunnelStoreState>((set, get) => {
                 endpoint: t.endpoint,
                 allowedIPs: t.wireguard.allowedIPs,
                 persistentKeepalive: t.wireguard.persistentKeepalive,
-              },
-              rawConfig: t.rawConfig,
-            });
-          } else {
-            useAppStore.getState().addConfig({
-              id: t.id,
-              name: t.name,
-              endpoint: t.endpoint,
-              interface: {
-                address: '10.14.0.2/32',
-                dns: '1.1.1.1',
-              },
-              peer: {
-                endpoint: t.endpoint,
-                allowedIPs: '0.0.0.0/0',
               },
               rawConfig: t.rawConfig,
             });

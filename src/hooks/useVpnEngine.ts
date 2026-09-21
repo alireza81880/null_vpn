@@ -233,8 +233,27 @@ export function useVpnEngine() {
           finalConfigStr = JSON.stringify(customConfig, null, 2);
         }
       } else {
-        // Resolve active tunnel from multi-protocol store with fallback to appStore configs
-        const selectedTunnel = useTunnelStore.getState().getActiveTunnel() || activeConfig;
+        // Resolve authoritative active TunnelItem source from useTunnelStore (with fallback for existing WireGuard configs)
+        const activeTunnelItem = useTunnelStore.getState().getActiveTunnel();
+        const selectedTunnel = activeTunnelItem || (activeConfig ? {
+          id: activeConfig.id,
+          name: activeConfig.name,
+          protocol: 'wireguard' as const,
+          endpoint: activeConfig.endpoint || '127.0.0.1:51820',
+          host: activeConfig.endpoint?.split(':')[0] || '127.0.0.1',
+          port: parseInt(activeConfig.endpoint?.split(':')[1] || '51820', 10),
+          wireguard: {
+            address: activeConfig.interface?.address,
+            dns: activeConfig.interface?.dns,
+            privateKey: activeConfig.interface?.privateKey,
+            publicKey: activeConfig.peer?.publicKey,
+            allowedIPs: activeConfig.peer?.allowedIPs,
+            persistentKeepalive: activeConfig.peer?.persistentKeepalive,
+            mtu: activeConfig.interface?.mtu,
+          },
+          rawConfig: activeConfig.rawConfig || '',
+          createdAt: activeConfig.createdAt || Date.now(),
+        } : null);
 
         if (!selectedTunnel) {
           const err = 'No active VPN configuration selected to launch sing-box';

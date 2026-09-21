@@ -179,6 +179,18 @@ public class SingboxPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getDiagnosticLogs(PluginCall call) {
+        java.util.List<String> entries = NullVpnService.DiagnosticLog.getEntries();
+        com.getcapacitor.JSArray arr = new com.getcapacitor.JSArray();
+        for (String entry : entries) {
+            arr.put(entry);
+        }
+        JSObject ret = new JSObject();
+        ret.put("logs", arr);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
     public void pingServer(PluginCall call) {
         String host = call.getString("host", "1.1.1.1");
         int port = call.getInt("port", 53);

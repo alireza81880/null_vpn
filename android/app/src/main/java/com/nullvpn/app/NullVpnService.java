@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.net.TrafficStats;
 import android.net.VpnService;
 import android.os.Build;
@@ -21,6 +22,15 @@ import org.json.JSONObject;
 
 import java.net.InetSocketAddress;
 import java.net.Socket;
+import java.text.SimpleDateFormat;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.nekohasekai.libbox.BridgeOptions;
 import io.nekohasekai.libbox.BridgeSession;
@@ -64,10 +74,42 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     private static volatile VpnEventListener eventListener = null;
     private static volatile NullVpnService activeInstance = null;
 
+    // Diagnostic internal circular buffer for lifecycle and failure tracking
+    public static class DiagnosticLog {
+        private static final int MAX_ENTRIES = 80;
+        private static final ArrayDeque<String> entries = new ArrayDeque<>(MAX_ENTRIES);
+        private static final Object lock = new Object();
+
+        public static void record(String tag, String message) {
+            String ts = new SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(new Date());
+            String line = "[" + ts + "] [" + tag + "] " + message;
+            Log.i(TAG, line);
+            synchronized (lock) {
+                if (entries.size() >= MAX_ENTRIES) {
+                    entries.pollFirst();
+                }
+                entries.addLast(line);
+            }
+        }
+
+        public static List<String> getEntries() {
+            synchronized (lock) {
+                return new ArrayList<>(entries);
+            }
+        }
+    }
+
+    private final AtomicBoolean isStopping = new AtomicBoolean(false);
+    private final AtomicBoolean isRunning = new AtomicBoolean(false);
+    private final AtomicBoolean isProbing = new AtomicBoolean(false);
+
     private ParcelFileDescriptor tunInterface = null;
     private CommandServer commandServer = null;
     private Handler telemetryHandler = null;
     private Runnable telemetryRunnable = null;
+    private ExecutorService probeExecutor = null;
+    private volatile int lastPingLatency = 0;
+
     private int uptimeSeconds = 0;
     private long totalRx = 0L;
     private long totalTx = 0L;
@@ -221,24 +263,47 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     public void onCreate() {
         super.onCreate();
         activeInstance = this;
+        DiagnosticLog.record("SERVICE_START", "NullVpnService onCreate (PID=" + Process.myPid() + ")");
+
+        final Thread.UncaughtExceptionHandler defaultHandler = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            DiagnosticLog.record("UNCAUGHT_EXCEPTION", "Crash in " + thread.getName() + ": " + throwable.getMessage());
+            Log.e(TAG, "Uncaught exception in " + thread.getName(), throwable);
+            if (defaultHandler != null) {
+                defaultHandler.uncaughtException(thread, throwable);
+            }
+        });
+
         createNotificationChannel();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) {
-            return START_NOT_STICKY;
+            DiagnosticLog.record("SERVICE_START", "onStartCommand with null intent (restarted by system)");
+            return START_STICKY;
         }
 
         String action = intent.getAction();
+        DiagnosticLog.record("SERVICE_START", "onStartCommand action=" + action + ", startId=" + startId);
+
         if (ACTION_START.equals(action)) {
             String config = intent.getStringExtra(EXTRA_CONFIG);
             startVpn(config);
         } else if (ACTION_STOP.equals(action)) {
-            stopVpn();
+            stopVpn("explicit UI disconnect");
+        } else {
+            DiagnosticLog.record("STOP_REQUEST_SOURCE", "unknown action: " + action);
         }
 
-        return START_NOT_STICKY;
+        return START_STICKY;
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        DiagnosticLog.record("STOP_REQUEST_SOURCE", "onTaskRemoved: Activity task swiped away, VPN remains running");
+        Log.i(TAG, "onTaskRemoved: Task removed, VPN foreground service continuing");
+        super.onTaskRemoved(rootIntent);
     }
 
     private void createNotificationChannel() {
@@ -278,15 +343,34 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             .build();
     }
 
+    private void promoteToForeground(Notification notification) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIFICATION_ID, notification, 0);
+            } else {
+                startForeground(NOTIFICATION_ID, notification);
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "startForeground fallback: " + t.getMessage());
+            try {
+                startForeground(NOTIFICATION_ID, notification);
+            } catch (Throwable ignored) {}
+        }
+    }
+
     private synchronized void startVpn(String configJson) {
-        Log.i(TAG, "Starting NullVpnService with config payload length: " + (configJson != null ? configJson.length() : 0));
+        isStopping.set(false);
+        isRunning.set(true);
+        DiagnosticLog.record("CORE_START", "Starting sing-box core with payload length: " + (configJson != null ? configJson.length() : 0));
         currentStatus = "connecting";
         if (eventListener != null) {
             eventListener.onStateChange("connecting", null);
         }
 
-        // Start Foreground Service immediately to satisfy Android requirements
-        startForeground(NOTIFICATION_ID, buildNotification("Initializing sing-box core..."));
+        // Start Foreground Service immediately with proper type
+        promoteToForeground(buildNotification("Initializing sing-box core..."));
 
         try {
             // Step 1: Validate config payload
@@ -364,12 +448,12 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             Log.i(TAG, "Libbox CommandServer started");
 
             // Step 5: Start the core service via CommandServer with JSON config and PlatformInterface
-            // The sing-box core will invoke openTun(TunOptions) via PlatformInterface when initializing TUN inbound!
             commandServer.startOrReloadService(configJson, new OverrideOptions());
-            Log.i(TAG, "sing-box core service started successfully via CommandServer");
+            DiagnosticLog.record("CORE_START", "sing-box core service started successfully via CommandServer");
 
             // Step 6: Mark status as connected and start telemetry reporting
             currentStatus = "connected";
+            DiagnosticLog.record("STATE_CHANGE", "Tunnel state transitioned to connected");
             uptimeSeconds = 0;
             totalRx = 0L;
             totalTx = 0L;
@@ -391,48 +475,64 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
         } catch (Throwable t) {
             String errorMsg = t.getMessage() != null ? t.getMessage() : t.toString();
             Log.e(TAG, "Failed to start sing-box core: " + errorMsg, t);
+            DiagnosticLog.record("CORE_ERROR", "Failed to start sing-box core: " + errorMsg);
             currentStatus = "error";
             if (eventListener != null) {
                 eventListener.onStateChange("error", errorMsg);
             }
-            stopForeground(true);
-            stopVpn();
+            stopVpn("startVpn failure");
         }
     }
 
-    private synchronized void stopVpn() {
-        Log.i(TAG, "Stopping NullVpnService");
+    private void stopVpn(String source) {
+        DiagnosticLog.record("STOP_REQUEST_SOURCE", source);
+        if (!isRunning.get() || !isStopping.compareAndSet(false, true)) {
+            Log.i(TAG, "stopVpn ignored: already stopping or not running (source: " + source + ")");
+            return;
+        }
+
+        Log.i(TAG, "Stopping NullVpnService (source: " + source + ", was " + currentStatus + ")");
+        DiagnosticLog.record("CORE_STOP", "Initiating shutdown from " + source + " (was " + currentStatus + ")");
+
         stopTelemetryLoop();
 
         if (commandServer != null) {
-            try {
-                commandServer.closeService();
-            } catch (Exception e) {
-                Log.w(TAG, "Error closing service in command server: " + e.getMessage());
-            }
-            try {
-                commandServer.close();
-            } catch (Exception e) {
-                Log.w(TAG, "Error closing command server: " + e.getMessage());
-            }
+            CommandServer cs = commandServer;
             commandServer = null;
+            try {
+                cs.closeService();
+            } catch (Exception e) {
+                DiagnosticLog.record("CORE_ERROR", "Error in commandServer.closeService: " + e.getMessage());
+            }
+            try {
+                cs.close();
+            } catch (Exception e) {
+                DiagnosticLog.record("CORE_ERROR", "Error in commandServer.close: " + e.getMessage());
+            }
         }
 
         if (tunInterface != null) {
-            try {
-                tunInterface.close();
-            } catch (Exception e) {
-                Log.w(TAG, "Error closing TUN interface: " + e.getMessage());
-            }
+            ParcelFileDescriptor tun = tunInterface;
             tunInterface = null;
+            try {
+                tun.close();
+            } catch (Exception e) {
+                DiagnosticLog.record("CORE_ERROR", "Error closing TUN interface: " + e.getMessage());
+            }
         }
 
         currentStatus = "disconnected";
+        isRunning.set(false);
+
         if (eventListener != null) {
             eventListener.onStateChange("disconnected", null);
         }
 
-        stopForeground(true);
+        DiagnosticLog.record("CORE_STOP", "Core stopped cleanly from " + source);
+
+        try {
+            stopForeground(true);
+        } catch (Exception ignored) {}
         stopSelf();
     }
 
@@ -724,7 +824,10 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     @Override
     public void serviceStop() throws Exception {
         Log.i(TAG, "CommandServerHandler: serviceStop requested by core");
-        stopVpn();
+        DiagnosticLog.record("STOP_REQUEST_SOURCE", "serviceStop callback from core");
+        new Thread(() -> {
+            stopVpn("serviceStop callback");
+        }, "NullVpn-core-stop").start();
     }
 
     @Override
@@ -749,16 +852,17 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     }
 
     // ==========================================
-    // Telemetry and Health Checks
+    // Telemetry and Health Checks (Safe Concurrency)
     // ==========================================
 
-    private void startTelemetryLoop() {
+    private synchronized void startTelemetryLoop() {
         stopTelemetryLoop();
+        probeExecutor = Executors.newSingleThreadExecutor();
         telemetryHandler = new Handler(Looper.getMainLooper());
         telemetryRunnable = new Runnable() {
             @Override
             public void run() {
-                if (!"connected".equals(currentStatus)) {
+                if (!"connected".equals(currentStatus) || isStopping.get()) {
                     return;
                 }
 
@@ -783,30 +887,46 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                 totalRx += rxSpeed;
                 totalTx += txSpeed;
 
-                final long snapshotRxSpeed = rxSpeed;
-                final long snapshotTxSpeed = txSpeed;
+                final long finalRxSpeed = rxSpeed;
+                final long finalTxSpeed = txSpeed;
 
-                new Thread(() -> {
-                    long pingResult = pingServer(currentServerHost, currentServerPort);
-                    int latency = pingResult > 0 ? (int) pingResult : 28;
-
-                    long finalRxSpeed = snapshotRxSpeed > 0 ? snapshotRxSpeed : 64L;
-                    long finalTxSpeed = snapshotTxSpeed > 0 ? snapshotTxSpeed : 32L;
-
-                    if (eventListener != null && "connected".equals(currentStatus)) {
-                        eventListener.onTelemetry(
-                            finalRxSpeed,
-                            finalTxSpeed,
-                            totalRx,
-                            totalTx,
-                            latency,
-                            uptimeSeconds,
-                            1
-                        );
+                // Concurrency control: maximum ONE ping probe active at any given time
+                if (!isStopping.get() && isProbing.compareAndSet(false, true)) {
+                    final ExecutorService exec = probeExecutor;
+                    if (exec != null && !exec.isShutdown()) {
+                        try {
+                            exec.execute(() -> {
+                                try {
+                                    if (isStopping.get() || !"connected".equals(currentStatus)) {
+                                        return;
+                                    }
+                                    long pingResult = pingServer(currentServerHost, currentServerPort);
+                                    lastPingLatency = pingResult > 0 ? (int) pingResult : 0;
+                                } finally {
+                                    isProbing.set(false);
+                                }
+                            });
+                        } catch (Exception e) {
+                            isProbing.set(false);
+                        }
+                    } else {
+                        isProbing.set(false);
                     }
-                }).start();
+                }
 
-                if (telemetryHandler != null) {
+                if (eventListener != null && "connected".equals(currentStatus) && !isStopping.get()) {
+                    eventListener.onTelemetry(
+                        finalRxSpeed,
+                        finalTxSpeed,
+                        totalRx,
+                        totalTx,
+                        lastPingLatency,
+                        uptimeSeconds,
+                        1
+                    );
+                }
+
+                if (telemetryHandler != null && !isStopping.get()) {
                     telemetryHandler.postDelayed(this, 1000);
                 }
             }
@@ -814,17 +934,25 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
         telemetryHandler.postDelayed(telemetryRunnable, 1000);
     }
 
-    private void stopTelemetryLoop() {
+    private synchronized void stopTelemetryLoop() {
         if (telemetryHandler != null && telemetryRunnable != null) {
             telemetryHandler.removeCallbacks(telemetryRunnable);
             telemetryHandler = null;
             telemetryRunnable = null;
         }
+        if (probeExecutor != null) {
+            try {
+                probeExecutor.shutdownNow();
+            } catch (Exception ignored) {}
+            probeExecutor = null;
+        }
+        isProbing.set(false);
     }
 
     @Override
     public void onDestroy() {
-        stopVpn();
+        DiagnosticLog.record("SERVICE_DESTROYED", "onDestroy called");
+        stopVpn("onDestroy");
         if (activeInstance == this) {
             activeInstance = null;
         }
@@ -833,8 +961,8 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
 
     @Override
     public void onRevoke() {
-        Log.w(TAG, "VPN permission revoked by system or user");
-        stopVpn();
+        DiagnosticLog.record("STOP_REQUEST_SOURCE", "onRevoke: VPN permission revoked");
+        stopVpn("onRevoke");
         if (activeInstance == this) {
             activeInstance = null;
         }
@@ -842,14 +970,20 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     }
 
     public static boolean runNetworkDiagnostics() {
+        NullVpnService service = activeInstance;
+        if (service != null && service.isStopping.get()) {
+            return false;
+        }
         Socket testSocket = null;
         try {
             long startTime = System.currentTimeMillis();
             testSocket = new Socket();
-            if (activeInstance != null) {
-                activeInstance.protect(testSocket);
+            if (service != null && !service.isStopping.get()) {
+                try {
+                    service.protect(testSocket);
+                } catch (Throwable ignored) {}
             }
-            testSocket.connect(new InetSocketAddress("1.1.1.1", 53), 2500);
+            testSocket.connect(new InetSocketAddress("1.1.1.1", 53), 1500);
             long latency = System.currentTimeMillis() - startTime;
             Log.i(TAG, "NetworkDiagnostics SUCCESS: Routed packet to 1.1.1.1:53 in " + latency + "ms");
             testSocket.close();
@@ -866,16 +1000,22 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     }
 
     public static long pingServer(String host, int port) {
+        NullVpnService service = activeInstance;
+        if (service != null && service.isStopping.get()) {
+            return -1L;
+        }
         Socket testSocket = null;
         try {
             String targetHost = (host != null && !host.trim().isEmpty()) ? host.trim() : "1.1.1.1";
             int targetPort = (port > 0 && port <= 65535) ? port : 53;
             long startTime = System.currentTimeMillis();
             testSocket = new Socket();
-            if (activeInstance != null) {
-                activeInstance.protect(testSocket);
+            if (service != null && !service.isStopping.get()) {
+                try {
+                    service.protect(testSocket);
+                } catch (Throwable ignored) {}
             }
-            testSocket.connect(new InetSocketAddress(targetHost, targetPort), 2500);
+            testSocket.connect(new InetSocketAddress(targetHost, targetPort), 1500);
             long latency = System.currentTimeMillis() - startTime;
             testSocket.close();
             return latency;
@@ -884,9 +1024,6 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                 try {
                     testSocket.close();
                 } catch (Exception ignored) {}
-            }
-            if (e.getMessage() != null && e.getMessage().toLowerCase().contains("refused")) {
-                return 42L;
             }
             return -1L;
         }
