@@ -19,6 +19,7 @@ import { useThemeStore, THEME_REGISTRY, type ThemeCategory } from '../store/useT
 import { useI18n } from '../i18n/I18nContext';
 import { BentoCard } from '../components/ui/BentoCard';
 import { LiquidButton } from '../components/ui/LiquidButton';
+import { UpdateCenterCard } from '../components/ui/UpdateCenterCard';
 
 /**
  * Modern iOS-Style Toggle Switch
@@ -580,6 +581,9 @@ export const SettingsPage: React.FC = () => {
             </div>
           </div>
         </BentoCard>
+
+        {/* In-App Update Center Card */}
+        <UpdateCenterCard />
       </div>
     </div>
   );

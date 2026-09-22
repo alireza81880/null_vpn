@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Languages, Moon, Sun, Home, Layers, BarChart3, Settings } from 'lucide-react';
+import { Shield, Languages, Moon, Sun, Home, Layers, BarChart3, Activity, Settings } from 'lucide-react';
 import { useNavigationStore } from '../../store/useNavigationStore';
 import { useAppStore } from '../../store/useAppStore';
 import { useI18n } from '../../i18n/I18nContext';
@@ -18,7 +18,8 @@ export const Sidebar: React.FC = () => {
     { id: 'dashboard', label: t('nav.dashboard'), icon: Home, shortcut: '⌘1' },
     { id: 'servers', label: t('nav.tunnels'), icon: Layers, shortcut: '⌘2' },
     { id: 'stats', label: t('nav.stats'), icon: BarChart3, shortcut: '⌘3' },
-    { id: 'settings', label: t('nav.settings'), icon: Settings, shortcut: '⌘4' },
+    { id: 'diagnostics', label: t('nav.diagnostics'), icon: Activity, shortcut: '⌘4' },
+    { id: 'settings', label: t('nav.settings'), icon: Settings, shortcut: '⌘5' },
   ];
 
   const handleToggleThemeQuick = () => {

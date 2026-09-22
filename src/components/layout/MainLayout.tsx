@@ -31,6 +31,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({ children }) => {
         return t('nav.tunnels');
       case 'stats':
         return t('nav.stats');
+      case 'diagnostics':
+        return t('nav.diagnostics');
       case 'settings':
         return t('nav.settings');
       default:

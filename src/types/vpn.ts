@@ -1,6 +1,6 @@
 export type Language = 'en' | 'fa';
 
-export type ConnectionState = 'disconnected' | 'connecting' | 'connected';
+export type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'disconnecting';
 
 export type ThemeId =
   | 'neo-ice'

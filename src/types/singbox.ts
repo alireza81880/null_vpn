@@ -2,7 +2,14 @@
  * Sing-Box Core Types & Telemetry Models for Null VPN (2026 Engine Architecture)
  */
 
-export type VpnConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
+export type VpnConnectionStatus =
+  | 'disconnected'
+  | 'connecting'
+  | 'core_running'
+  | 'tunnel_verified'
+  | 'connected'
+  | 'disconnecting'
+  | 'error';
 
 export interface VpnTelemetryPayload {
   downloadSpeed: number; // bytes/sec

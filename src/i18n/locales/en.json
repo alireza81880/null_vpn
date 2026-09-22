@@ -20,6 +20,7 @@
     "dashboard": "Dashboard",
     "tunnels": "Tunnels",
     "stats": "Stats",
+    "diagnostics": "Diagnostics",
     "settings": "Settings"
   },
   "dashboard": {

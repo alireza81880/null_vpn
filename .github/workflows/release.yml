@@ -123,6 +123,13 @@ jobs:
             exit 1
           fi
 
+          if unzip -l /tmp/classes.jar | grep -q "io/nekohasekai/libbox/CommandClient.class"; then
+            echo "✔ io.nekohasekai.libbox.CommandClient verified"
+          else
+            echo "ERROR: io.nekohasekai.libbox.CommandClient missing from libbox.aar"
+            exit 1
+          fi
+
           # 3. Check JNI architectures packaged inside AAR
           echo "Packaged JNI architectures inside AAR:"
           unzip -l android/app/libs/libbox.aar | grep "jni/" | awk '{print $NF}'
@@ -151,15 +158,25 @@ jobs:
           # تغییر نام فایل نهایی
           mv android/app/build/outputs/apk/release/app-release-unsigned.apk android/app/build/outputs/apk/release/Null-VPN-Release.apk
 
+      - name: Generate Checksum
+        run: |
+          cd android/app/build/outputs/apk/release
+          sha256sum Null-VPN-Release.apk > Null-VPN-Release.apk.sha256
+          cat Null-VPN-Release.apk.sha256
+
       - name: Upload Android Artifact (For Manual Runs)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: Null-VPN-Android-Release-APK
-          path: android/app/build/outputs/apk/release/Null-VPN-Release.apk
+          path: |
+            android/app/build/outputs/apk/release/Null-VPN-Release.apk
+            android/app/build/outputs/apk/release/Null-VPN-Release.apk.sha256
 
       - name: Upload Release Asset (For Tag Pushes)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: android/app/build/outputs/apk/release/Null-VPN-Release.apk
+          files: |
+            android/app/build/outputs/apk/release/Null-VPN-Release.apk
+            android/app/build/outputs/apk/release/Null-VPN-Release.apk.sha256

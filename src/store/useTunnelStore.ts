@@ -358,36 +358,37 @@ export const useTunnelStore = create<TunnelStoreState>((set, get) => {
       }
 
       // Mirror to useAppStore activeConfigId
-      if (id) {
-        if (selected) {
-          const appConfigs = useAppStore.getState().configs;
-          const matchingConfig = appConfigs.find(
-            (c) => c.id === id || c.name === selected.name || c.endpoint === selected.endpoint
-          );
-          if (matchingConfig) {
-            useAppStore.getState().setActiveConfigId(matchingConfig.id);
-          } else {
-            // If not in appStore, insert it so dashboard can connect
-            const addedId = useAppStore.getState().addConfig({
-              id: selected.id,
-              name: selected.name,
+      if (id && selected) {
+        const appConfigs = useAppStore.getState().configs;
+        const matchingConfig = appConfigs.find(
+          (c) => c.id === id || c.name === selected.name || c.endpoint === selected.endpoint
+        );
+        if (matchingConfig) {
+          useAppStore.getState().setActiveConfigId(matchingConfig.id);
+        } else if (selected.protocol === 'wireguard' && selected.wireguard) {
+          // Only insert into appStore if it is a genuine WireGuard config
+          const addedId = useAppStore.getState().addConfig({
+            id: selected.id,
+            name: selected.name,
+            endpoint: selected.endpoint,
+            interface: {
+              privateKey: selected.wireguard.privateKey,
+              address: selected.wireguard.address || '10.14.0.2/32',
+              dns: selected.wireguard.dns || '1.1.1.1',
+              mtu: selected.wireguard.mtu,
+            },
+            peer: {
+              publicKey: selected.wireguard.publicKey,
               endpoint: selected.endpoint,
-              interface: {
-                privateKey: selected.wireguard?.privateKey,
-                address: selected.wireguard?.address || '10.14.0.2/32',
-                dns: selected.wireguard?.dns || '1.1.1.1',
-                mtu: selected.wireguard?.mtu,
-              },
-              peer: {
-                publicKey: selected.wireguard?.publicKey,
-                endpoint: selected.endpoint,
-                allowedIPs: selected.wireguard?.allowedIPs || '0.0.0.0/0',
-                persistentKeepalive: selected.wireguard?.persistentKeepalive,
-              },
-              rawConfig: selected.rawConfig,
-            });
-            useAppStore.getState().setActiveConfigId(addedId);
-          }
+              allowedIPs: selected.wireguard.allowedIPs || '0.0.0.0/0',
+              persistentKeepalive: selected.wireguard.persistentKeepalive,
+            },
+            rawConfig: selected.rawConfig,
+          });
+          useAppStore.getState().setActiveConfigId(addedId);
+        } else {
+          // For non-WireGuard nodes (VLESS, Trojan, etc.), do NOT synthesize fake WireGuard configs
+          useAppStore.getState().setActiveConfigId(selected.id);
         }
       }
     },

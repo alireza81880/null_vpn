@@ -79,6 +79,51 @@ export interface SingboxPlugin {
   pingServer(options: { host: string; port: number }): Promise<{ success: boolean; latencyMs: number; error?: string }>;
 
   /**
+   * Retrieves persistent diagnostic circular buffers for current and previous sessions
+   */
+  getDiagnosticLogs(): Promise<{ currentSession: string[]; lastSession: string[]; logs?: string[] }>;
+
+  /**
+   * Clears internal persistent diagnostic logs
+   */
+  clearDiagnosticLogs(): Promise<{ success: boolean }>;
+
+  /**
+   * Prompts Android package installer via FileProvider
+   */
+  installApk(options: { filePath: string }): Promise<{ success: boolean }>;
+
+  /**
+   * Checks if user has granted REQUEST_INSTALL_PACKAGES permission
+   */
+  canRequestPackageInstalls(): Promise<{ canInstall: boolean }>;
+
+  /**
+   * Opens Android Settings page to allow installing unknown apps
+   */
+  openInstallPermissionSettings(): Promise<{ success: boolean }>;
+
+  /**
+   * Downloads APK via Android DownloadManager and triggers package installer on completion
+   */
+  downloadAndInstallApk(options: { url: string; fileName?: string }): Promise<{
+    success: boolean;
+    downloadId: number;
+    filePath: string;
+  }>;
+
+  /**
+   * Queries real-time download byte progress from DownloadManager
+   */
+  getDownloadProgress(options: { downloadId: number }): Promise<{
+    downloadedBytes: number;
+    totalBytes: number;
+    status: number;
+    isCompleted: boolean;
+    isFailed: boolean;
+  }>;
+
+  /**
    * Subscribes to tunnel state transitions ('connecting', 'connected', 'disconnected', 'error').
    */
   addListener(

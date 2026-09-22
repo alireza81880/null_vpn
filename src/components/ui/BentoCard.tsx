@@ -94,7 +94,12 @@ export const BentoCard: React.FC<BentoCardProps> = React.memo(({
                 }}
                 className="w-8 h-8 rounded-xl border flex items-center justify-center shrink-0"
               >
-                {icon}
+                {React.isValidElement(icon)
+                  ? icon
+                  : typeof icon === 'function' ||
+                    (typeof icon === 'object' && icon !== null && ('$$typeof' in icon || 'render' in icon))
+                  ? React.createElement(icon as any, { className: 'w-4 h-4' })
+                  : (icon as any)}
               </div>
             )}
             <div className="min-w-0">

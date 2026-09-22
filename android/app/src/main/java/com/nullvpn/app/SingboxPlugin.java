@@ -180,14 +180,227 @@ public class SingboxPlugin extends Plugin {
 
     @PluginMethod
     public void getDiagnosticLogs(PluginCall call) {
-        java.util.List<String> entries = NullVpnService.DiagnosticLog.getEntries();
-        com.getcapacitor.JSArray arr = new com.getcapacitor.JSArray();
-        for (String entry : entries) {
-            arr.put(entry);
+        java.util.List<String> current = NullVpnService.DiagnosticLog.getCurrentEntries();
+        java.util.List<String> last = NullVpnService.DiagnosticLog.getLastEntries();
+
+        com.getcapacitor.JSArray currentArr = new com.getcapacitor.JSArray();
+        for (String entry : current) {
+            currentArr.put(entry);
+        }
+
+        com.getcapacitor.JSArray lastArr = new com.getcapacitor.JSArray();
+        for (String entry : last) {
+            lastArr.put(entry);
+        }
+
+        JSObject ret = new JSObject();
+        ret.put("currentSession", currentArr);
+        ret.put("lastSession", lastArr);
+        ret.put("logs", currentArr); // backwards-compatibility
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void clearDiagnosticLogs(PluginCall call) {
+        NullVpnService.DiagnosticLog.clear();
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void installApk(PluginCall call) {
+        String filePath = call.getString("filePath");
+        if (filePath == null || filePath.trim().isEmpty()) {
+            call.reject("filePath is required");
+            return;
+        }
+
+        try {
+            java.io.File file = new java.io.File(filePath);
+            if (!file.exists()) {
+                call.reject("APK file does not exist: " + filePath);
+                return;
+            }
+
+            android.content.Context context = getContext();
+            android.net.Uri apkUri = androidx.core.content.FileProvider.getUriForFile(
+                context,
+                context.getPackageName() + ".fileprovider",
+                file
+            );
+
+            Intent installIntent = new Intent(Intent.ACTION_VIEW);
+            installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+            installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+
+            context.startActivity(installIntent);
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to install APK: " + e.getMessage(), e);
+            call.reject("Failed to trigger installer: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void canRequestPackageInstalls(PluginCall call) {
+        boolean canInstall = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            canInstall = getContext().getPackageManager().canRequestPackageInstalls();
         }
         JSObject ret = new JSObject();
-        ret.put("logs", arr);
+        ret.put("canInstall", canInstall);
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void openInstallPermissionSettings(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES);
+            intent.setData(android.net.Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+        }
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void downloadAndInstallApk(PluginCall call) {
+        String url = call.getString("url");
+        String fileName = call.getString("fileName", "null-vpn-update.apk");
+
+        if (url == null || url.trim().isEmpty()) {
+            call.reject("url is required");
+            return;
+        }
+
+        try {
+            android.content.Context context = getContext();
+            android.app.DownloadManager downloadManager = (android.app.DownloadManager) context.getSystemService(android.content.Context.DOWNLOAD_SERVICE);
+            if (downloadManager == null) {
+                call.reject("DownloadManager service not available");
+                return;
+            }
+
+            // Target destination inside external files dir
+            java.io.File destFile = new java.io.File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS), fileName);
+            if (destFile.exists()) {
+                destFile.delete();
+            }
+
+            android.app.DownloadManager.Request request = new android.app.DownloadManager.Request(android.net.Uri.parse(url));
+            request.setTitle("Null VPN Update");
+            request.setDescription("Downloading latest release...");
+            request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDestinationUri(android.net.Uri.fromFile(destFile));
+            request.setMimeType("application/vnd.android.package-archive");
+
+            long downloadId = downloadManager.enqueue(request);
+
+            // Register BroadcastReceiver for automatic installation trigger
+            android.content.BroadcastReceiver onComplete = new android.content.BroadcastReceiver() {
+                @Override
+                public void onReceive(android.content.Context c, Intent intent) {
+                    long id = intent.getLongExtra(android.app.DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+                    if (id == downloadId) {
+                        try {
+                            context.unregisterReceiver(this);
+                        } catch (Exception ignored) {}
+
+                        android.app.DownloadManager.Query query = new android.app.DownloadManager.Query();
+                        query.setFilterById(downloadId);
+                        android.database.Cursor cursor = downloadManager.query(query);
+                        if (cursor != null && cursor.moveToFirst()) {
+                            int statusIndex = cursor.getColumnIndex(android.app.DownloadManager.COLUMN_STATUS);
+                            if (statusIndex >= 0 && cursor.getInt(statusIndex) == android.app.DownloadManager.STATUS_SUCCESSFUL) {
+                                try {
+                                    android.net.Uri apkUri = androidx.core.content.FileProvider.getUriForFile(
+                                        context,
+                                        context.getPackageName() + ".fileprovider",
+                                        destFile
+                                    );
+                                    Intent installIntent = new Intent(Intent.ACTION_VIEW);
+                                    installIntent.setDataAndType(apkUri, "application/vnd.android.package-archive");
+                                    installIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                                    installIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                    context.startActivity(installIntent);
+                                } catch (Exception e) {
+                                    Log.e(TAG, "Install trigger failed after download", e);
+                                }
+                            }
+                            cursor.close();
+                        }
+                    }
+                }
+            };
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(onComplete, new android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE), android.content.Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                context.registerReceiver(onComplete, new android.content.IntentFilter(android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+            }
+
+            JSObject ret = new JSObject();
+            ret.put("success", true);
+            ret.put("downloadId", downloadId);
+            ret.put("filePath", destFile.getAbsolutePath());
+            call.resolve(ret);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to enqueue APK download: " + e.getMessage(), e);
+            call.reject("Failed to enqueue download: " + e.getMessage());
+        }
+    }
+
+    @PluginMethod
+    public void getDownloadProgress(PluginCall call) {
+        long downloadId = call.getLong("downloadId", -1L);
+        if (downloadId == -1L) {
+            call.reject("downloadId is required");
+            return;
+        }
+
+        try {
+            android.app.DownloadManager downloadManager = (android.app.DownloadManager) getContext().getSystemService(android.content.Context.DOWNLOAD_SERVICE);
+            if (downloadManager == null) {
+                call.reject("DownloadManager not available");
+                return;
+            }
+
+            android.app.DownloadManager.Query query = new android.app.DownloadManager.Query();
+            query.setFilterById(downloadId);
+            android.database.Cursor cursor = downloadManager.query(query);
+
+            JSObject ret = new JSObject();
+            if (cursor != null && cursor.moveToFirst()) {
+                int bytesDownloadedIdx = cursor.getColumnIndex(android.app.DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR);
+                int bytesTotalIdx = cursor.getColumnIndex(android.app.DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
+                int statusIdx = cursor.getColumnIndex(android.app.DownloadManager.COLUMN_STATUS);
+
+                long downloaded = bytesDownloadedIdx >= 0 ? cursor.getLong(bytesDownloadedIdx) : 0;
+                long total = bytesTotalIdx >= 0 ? cursor.getLong(bytesTotalIdx) : 0;
+                int status = statusIdx >= 0 ? cursor.getInt(statusIdx) : 0;
+
+                ret.put("downloadedBytes", downloaded);
+                ret.put("totalBytes", total);
+                ret.put("status", status);
+                ret.put("isCompleted", status == android.app.DownloadManager.STATUS_SUCCESSFUL);
+                ret.put("isFailed", status == android.app.DownloadManager.STATUS_FAILED);
+                cursor.close();
+            } else {
+                ret.put("status", -1);
+                ret.put("isCompleted", false);
+                ret.put("isFailed", true);
+            }
+            call.resolve(ret);
+        } catch (Exception e) {
+            call.reject("Failed to query download progress: " + e.getMessage());
+        }
     }
 
     @PluginMethod

@@ -17,10 +17,11 @@
     "sampleConfigLoaded": "کانفیگ نمونه با موفقیت اضافه شد"
   },
   "nav": {
-    "dashboard": "Dashboard",
-    "tunnels": "Tunnels",
-    "stats": "Stats",
-    "settings": "Settings"
+    "dashboard": "داشبورد",
+    "tunnels": "تونل‌ها",
+    "stats": "آمار و ترافیک",
+    "diagnostics": "عیب‌یابی",
+    "settings": "تنظیمات"
   },
   "dashboard": {
     "emptyTitle": "Zero-Trust Tunnel Routing",

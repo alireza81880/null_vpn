@@ -98,6 +98,8 @@ export function useVpnEngine() {
             if (!isSubscribed) return;
             switch (payload.status) {
               case 'connecting':
+              case 'core_running':
+              case 'tunnel_verified':
                 setConnectionState('connecting');
                 break;
               case 'connected':
@@ -109,6 +111,9 @@ export function useVpnEngine() {
                     updateStats({ latencyPing: diag.latencyMs });
                   }
                 }).catch(() => {});
+                break;
+              case 'disconnecting':
+                setConnectionState('disconnecting');
                 break;
               case 'disconnected':
                 setConnectionState('disconnected');

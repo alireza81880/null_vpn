@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Layers, BarChart3, Settings } from 'lucide-react';
+import { Home, Layers, BarChart3, Activity, Settings } from 'lucide-react';
 import { useNavigationStore } from '../../store/useNavigationStore';
 import { useI18n } from '../../i18n/I18nContext';
 import type { NavTab } from '../../types/navigation';
@@ -22,6 +22,7 @@ export const BottomNav: React.FC = () => {
     { id: 'dashboard', label: t('nav.dashboard'), icon: Home },
     { id: 'servers', label: t('nav.tunnels'), icon: Layers },
     { id: 'stats', label: t('nav.stats'), icon: BarChart3 },
+    { id: 'diagnostics', label: t('nav.diagnostics'), icon: Activity },
     { id: 'settings', label: t('nav.settings'), icon: Settings },
   ];
 

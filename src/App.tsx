@@ -17,6 +17,9 @@ const ServersPage = lazy(() =>
 const StatsPage = lazy(() =>
   import('./pages/StatsPage').then((module) => ({ default: module.StatsPage }))
 );
+const DiagnosticsPage = lazy(() =>
+  import('./pages/DiagnosticsPage').then((module) => ({ default: module.DiagnosticsPage }))
+);
 const SettingsPage = lazy(() =>
   import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage }))
 );
@@ -42,6 +45,8 @@ export default function App() {
         return <ServersPage />;
       case 'stats':
         return <StatsPage />;
+      case 'diagnostics':
+        return <DiagnosticsPage />;
       case 'settings':
         return <SettingsPage />;
       default:
