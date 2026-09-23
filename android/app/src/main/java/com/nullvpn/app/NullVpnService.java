@@ -1151,7 +1151,7 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
 
     @Override
     public ConnectionOwner findConnectionOwner(int ipProtocol, String sourceAddress, int sourcePort, String destinationAddress, int destinationPort) throws Exception {
-        return null;
+        throw new Exception("Connection owner lookup is not supported");
     }
 
     public String packageNameByUid(int uid) {
