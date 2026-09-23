@@ -217,6 +217,8 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     private volatile long coreUplinkSpeed = 0L;
     private volatile long coreDownlinkTotal = 0L;
     private volatile long coreUplinkTotal = 0L;
+    private volatile int coreConnectionsIn = 0;
+    private volatile int coreConnectionsOut = 0;
 
     private String currentServerHost = "1.1.1.1";
     private int currentServerPort = 53;
@@ -956,6 +958,12 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                         coreUplinkSpeed = status.getUplink();
                         coreDownlinkTotal = status.getDownlinkTotal();
                         coreUplinkTotal = status.getUplinkTotal();
+                        coreConnectionsIn = status.getConnectionsIn();
+                        coreConnectionsOut = status.getConnectionsOut();
+
+                        if (status.getConnectionsIn() > 0 || status.getConnectionsOut() > 0 || status.getDownlinkTotal() > 0) {
+                            Log.d(TAG, "writeStatus: connIn=" + status.getConnectionsIn() + " connOut=" + status.getConnectionsOut() + " downTotal=" + status.getDownlinkTotal() + " upTotal=" + status.getUplinkTotal());
+                        }
 
                         if (("core_running".equals(currentStatus) || "tunnel_verified".equals(currentStatus)) &&
                             (coreDownlinkTotal > 0 || status.getConnectionsOut() > 0)) {
@@ -1486,6 +1494,11 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
         String message = physicalInternet ? "Physical internet available; tunnel probe unproven" : "Physical internet unreachable";
 
         if (service != null && !service.isStopping.get()) {
+            DiagnosticLog.record("CORE_STATUS", "connIn=" + service.coreConnectionsIn +
+                " connOut=" + service.coreConnectionsOut +
+                " downTotal=" + service.coreDownlinkTotal +
+                " upTotal=" + service.coreUplinkTotal);
+
             CommandClient client = service.commandClient;
             if (client != null) {
                 coreReachability = true;
@@ -1494,27 +1507,35 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                     // URLTestOutbound does NOT use service.protect(socket); sing-box routes it natively through proxy-out
                     URLTestOutboundResult res = client.urlTestOutbound("proxy-out", "http://cp.cloudflare.com/generate_204", 3000);
                     if (res != null) {
-                        String err = res.getError();
+                        String rawErr = res.getError();
                         int delay = res.getDelay();
-                        if (err == null || err.trim().isEmpty()) {
+                        String sanitizedErr = DiagnosticLog.scrubSecrets(rawErr != null ? rawErr.trim() : "");
+                        DiagnosticLog.record("URL_TEST_PROBE", "res!=null delay=" + delay + "ms error=" + (sanitizedErr.isEmpty() ? "none" : sanitizedErr));
+                        Log.i(TAG, "DiagnosticProbe URLTestOutbound: delay=" + delay + "ms, err=" + sanitizedErr);
+
+                        if (rawErr == null || rawErr.trim().isEmpty()) {
                             tunnelReachability = "true";
                             tunnelLatency = delay > 0 ? delay : physicalLatency;
                             message = "Tunnel traffic verified via WireGuard outbound (" + tunnelLatency + "ms)";
                             Log.i(TAG, "DiagnosticProbe URLTestOutbound SUCCESS: delay=" + delay + "ms");
                         } else {
                             tunnelReachability = "false";
-                            message = "Tunnel outbound probe returned error: " + err;
-                            Log.w(TAG, "DiagnosticProbe URLTestOutbound FAILED: " + err);
+                            message = "Tunnel outbound probe returned error: " + sanitizedErr;
+                            Log.w(TAG, "DiagnosticProbe URLTestOutbound FAILED: " + sanitizedErr);
+                            DiagnosticLog.record("PROBE_ERROR", "URLTestOutbound failed: " + sanitizedErr);
                         }
                     } else {
+                        DiagnosticLog.record("URL_TEST_PROBE", "res==null");
                         tunnelReachability = "unknown";
                         message = "Tunnel outbound probe returned null result";
                     }
                 } catch (Throwable t) {
-                    Log.w(TAG, "DiagnosticProbe URLTestOutbound exception: " + t.getMessage());
+                    String sanitizedEx = DiagnosticLog.scrubSecrets(t.getMessage());
+                    DiagnosticLog.record("URL_TEST_PROBE_EX", "Exception during urlTestOutbound: " + sanitizedEx);
+                    Log.w(TAG, "DiagnosticProbe URLTestOutbound exception: " + sanitizedEx);
                     // Active probe failed; mark as false or unknown without promoting based on telemetry
                     tunnelReachability = "false";
-                    message = "Tunnel outbound probe failed (" + t.getMessage() + ")";
+                    message = "Tunnel outbound probe failed (" + sanitizedEx + ")";
                 }
             } else {
                 if (service.isRunning.get()) {
