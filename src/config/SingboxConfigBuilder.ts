@@ -5,6 +5,7 @@ import type {
   SingBoxWireGuardPeerEndpoint,
 } from '../types/singbox';
 import type { WireguardTunnelConfig, TunnelItem } from '../types/vpn';
+import { sanitizeWireGuardKey } from './ConfigValidator';
 
 /**
  * Universal Sing-Box Config Generator.
@@ -67,9 +68,9 @@ export function buildUniversalSingBoxConfig(
         localAddress = splitAddresses;
       }
     }
-    const privateKey = (wgParams?.privateKey || '').trim();
-    const peerPublicKey = (peerParams?.publicKey || '').trim();
-    const preSharedKey = (peerParams?.preSharedKey || '').trim() || undefined;
+    const privateKey = sanitizeWireGuardKey(wgParams?.privateKey || '');
+    const peerPublicKey = sanitizeWireGuardKey(peerParams?.publicKey || '');
+    const preSharedKey = peerParams?.preSharedKey ? sanitizeWireGuardKey(peerParams.preSharedKey) : undefined;
     const reserved = peerParams?.reserved || [0, 0, 0];
     const persistentKeepalive = peerParams?.persistentKeepalive;
 
@@ -235,8 +236,12 @@ export function buildUniversalSingBoxConfig(
   } else if (protocol === 'trojan' && isTunnelItem) {
     const host = tunnel.host || tunnel.endpoint.split(':')[0] || '127.0.0.1';
     const port = tunnel.port || 443;
-    const password = tunnel.uuidOrPassword || '';
+    const password = (tunnel.uuidOrPassword || '').trim();
     proxyHost = host;
+
+    if (!password) {
+      throw new Error('Invalid Trojan configuration: missing required password');
+    }
 
     proxyOutbound = {
       type: 'trojan',
@@ -247,7 +252,16 @@ export function buildUniversalSingBoxConfig(
       tls: {
         enabled: true,
         server_name: tunnel.sni || host,
+        insecure: tunnel.insecure,
       },
+      transport:
+        tunnel.type === 'ws'
+          ? {
+              type: 'ws',
+              path: tunnel.path || '/',
+              headers: tunnel.wsHost ? { Host: tunnel.wsHost } : undefined,
+            }
+          : undefined,
     };
   } else if (protocol === 'vmess' && isTunnelItem) {
     const host = tunnel.host || tunnel.endpoint.split(':')[0] || '127.0.0.1';
@@ -292,15 +306,20 @@ export function buildUniversalSingBoxConfig(
   } else if (protocol === 'shadowsocks' && isTunnelItem) {
     const host = tunnel.host || tunnel.endpoint.split(':')[0] || '127.0.0.1';
     const port = tunnel.port || 8388;
-    const password = tunnel.uuidOrPassword || '';
+    const password = (tunnel.uuidOrPassword || '').trim();
+    const method = tunnel.method || (tunnel as any).cipher || 'chacha20-ietf-poly1305';
     proxyHost = host;
+
+    if (!password) {
+      throw new Error('Invalid Shadowsocks configuration: missing required password');
+    }
 
     proxyOutbound = {
       type: 'shadowsocks',
       tag: 'proxy-out',
       server: host,
       server_port: port,
-      method: 'chacha20-ietf-poly1305',
+      method,
       password,
     } as any;
   } else {
@@ -308,6 +327,16 @@ export function buildUniversalSingBoxConfig(
       type: 'direct',
       tag: 'proxy-out',
     };
+  }
+
+  // Derive remote DNS if specified in WireGuard
+  const customDns = isTunnelItem ? tunnel.wireguard?.dns : (tunnel as WireguardTunnelConfig).interface?.dns;
+  let remoteDnsServer = '1.1.1.1';
+  if (customDns) {
+    const firstDns = customDns.split(',')[0].trim();
+    if (/^(\d{1,3}\.){3}\d{1,3}$/.test(firstDns) || firstDns.includes(':')) {
+      remoteDnsServer = firstDns;
+    }
   }
 
   // Build the complete sing-box configuration document for sing-box-lx v1.14.1-lx.8
@@ -322,7 +351,7 @@ export function buildUniversalSingBoxConfig(
         {
           tag: 'dns-remote',
           type: 'tcp',
-          server: '1.1.1.1',
+          server: remoteDnsServer,
           server_port: 53,
           detour: 'proxy-out',
         },

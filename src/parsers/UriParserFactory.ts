@@ -101,13 +101,37 @@ function parseShadowsocksUri(rawUri: string): ParseResult {
     const port = parseInt(uri.port || '8388', 10);
     const name = uri.hash ? decodeURIComponent(uri.hash.slice(1)) : `SS-${host}`;
 
+    let method = 'chacha20-ietf-poly1305';
+    let password = '';
+
+    if (uri.password) {
+      method = decodeURIComponent(uri.username);
+      password = decodeURIComponent(uri.password);
+    } else if (uri.username) {
+      let rawUser = uri.username;
+      try {
+        const decoded = atob(rawUser);
+        if (decoded.includes(':')) {
+          rawUser = decoded;
+        }
+      } catch {}
+      if (rawUser.includes(':')) {
+        const colonIdx = rawUser.indexOf(':');
+        method = rawUser.slice(0, colonIdx);
+        password = rawUser.slice(colonIdx + 1);
+      } else {
+        password = rawUser;
+      }
+    }
+
     const tunnel: ParsedTunnel = {
       name,
       protocol: 'shadowsocks',
       endpoint: `${host}:${port}`,
       host,
       port,
-      uuidOrPassword: uri.username,
+      method,
+      uuidOrPassword: password,
       rawConfig: rawUri.trim(),
     };
 
@@ -125,15 +149,27 @@ function parseShadowsocksUri(rawUri: string): ParseResult {
       const decoded = atob(b64);
       const atIdx = decoded.indexOf('@');
       if (atIdx !== -1) {
+        const userInfo = decoded.slice(0, atIdx);
         const hostPort = decoded.slice(atIdx + 1);
         const [host, portStr] = hostPort.split(':');
         const port = parseInt(portStr || '8388', 10);
+
+        let method = 'chacha20-ietf-poly1305';
+        let password = userInfo;
+        if (userInfo.includes(':')) {
+          const colonIdx = userInfo.indexOf(':');
+          method = userInfo.slice(0, colonIdx);
+          password = userInfo.slice(colonIdx + 1);
+        }
+
         const tunnel: ParsedTunnel = {
           name,
           protocol: 'shadowsocks',
           endpoint: `${host}:${port}`,
           host,
           port,
+          method,
+          uuidOrPassword: password,
           rawConfig: rawUri.trim(),
         };
         return {

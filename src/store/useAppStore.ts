@@ -6,6 +6,7 @@ import type {
   WireguardTunnelConfig,
   SessionStats,
 } from '../types/vpn';
+import { sanitizeWireGuardKey, isValidBase64Key } from '../config/ConfigValidator';
 
 // ============================================================================
 // DOM Synchronizers (Language & Theme)
@@ -73,7 +74,13 @@ const getInitialConfigs = (): WireguardTunnelConfig[] => {
     const saved = localStorage.getItem(STORAGE_KEYS.CONFIGS);
     if (!saved) return []; // STRICT REQUIREMENT: Starts with Empty State
     const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((c: any) => {
+      if (!c || typeof c !== 'object') return false;
+      const priv = sanitizeWireGuardKey(c.interface?.privateKey);
+      const pub = sanitizeWireGuardKey(c.peer?.publicKey);
+      return isValidBase64Key(priv, 32) && isValidBase64Key(pub, 32);
+    });
   } catch {
     return [];
   }
@@ -291,13 +298,14 @@ export const useAppStore = create<AppState>((set, get) => {
         interface: {
           address: '10.14.0.2/32',
           dns: '1.1.1.1, 8.8.8.8',
+          privateKey: 'QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=',
         },
         peer: {
           endpoint: '198.51.100.42:51820',
           allowedIPs: '0.0.0.0/0, ::/0',
           publicKey: 'p4+N8yK8wM1qW1N9V2v6X7x+K1u9Z4t8Q3b2Y5c6F7A=',
         },
-        rawConfig: `[Interface]\nPrivateKey = <sample-client-key>\nAddress = 10.14.0.2/32\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = p4+N8yK8wM1qW1N9V2v6X7x+K1u9Z4t8Q3b2Y5c6F7A=\nEndpoint = 198.51.100.42:51820\nAllowedIPs = 0.0.0.0/0`,
+        rawConfig: `[Interface]\nPrivateKey = QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=\nAddress = 10.14.0.2/32\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = p4+N8yK8wM1qW1N9V2v6X7x+K1u9Z4t8Q3b2Y5c6F7A=\nEndpoint = 198.51.100.42:51820\nAllowedIPs = 0.0.0.0/0`,
       };
       get().addConfig(sample);
     },

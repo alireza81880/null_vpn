@@ -106,6 +106,8 @@ export interface TunnelItem {
   };
   packetEncoding?: string;
   alpn?: string[];
+  method?: string;
+  cipher?: string;
   wireguard?: WireguardParams;
   subscriptionId?: string;
   subscriptionName?: string;

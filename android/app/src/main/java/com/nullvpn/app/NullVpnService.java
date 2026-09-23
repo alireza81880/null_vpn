@@ -13,6 +13,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.os.Process;
+import android.util.Base64;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
@@ -35,6 +36,7 @@ import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import io.nekohasekai.libbox.BridgeOptions;
 import io.nekohasekai.libbox.BridgeSession;
@@ -155,10 +157,11 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             }
         }
 
-        private static String scrubSecrets(String msg) {
+        public static String scrubSecrets(String msg) {
             if (msg == null) return "";
             return msg.replaceAll("([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})", "[REDACTED-UUID]")
-                      .replaceAll("(?i)(private_key|password|pre_shared_key|public_key)[\"':= ]+([A-Za-z0-9+/=_-]{20,})", "$1=[REDACTED]");
+                      .replaceAll("(?i)(private_key|password|pre_shared_key|public_key|token|auth_token|secret)[\"':= ]+([A-Za-z0-9+/=_-]{16,})", "$1=[REDACTED]")
+                      .replaceAll("(?i)(https?://[^\\s?#]+\\?[^\\s]+)", "[REDACTED-URL-WITH-PARAMS]");
         }
 
         public static List<String> getCurrentEntries() {
@@ -190,6 +193,15 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     private final AtomicBoolean isStopping = new AtomicBoolean(false);
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private final AtomicBoolean isProbing = new AtomicBoolean(false);
+
+    // Single-threaded FIFO executor to strictly serialize all VPN lifecycle operations (start, stop, error cleanup)
+    private final ExecutorService vpnLifecycleExecutor = Executors.newSingleThreadExecutor();
+
+    // Generation counter to detect, supersede, and discard stale startup/shutdown attempts
+    private final AtomicLong sessionGeneration = new AtomicLong(0);
+
+    // Lock guarding native CommandServer, CommandClient, and TUN descriptor creation/destruction
+    private final Object nativeResourceLock = new Object();
 
     private ParcelFileDescriptor tunInterface = null;
     private CommandServer commandServer = null;
@@ -230,6 +242,20 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             throw new IllegalArgumentException("sing-box configuration payload is null or empty");
         }
 
+        // 1. Pre-flight native validation via sing-box Go engine (libbox.aar)
+        try {
+            Libbox.checkConfig(configJson);
+        } catch (Throwable t) {
+            if (t instanceof UnsatisfiedLinkError || t instanceof NoClassDefFoundError) {
+                DiagnosticLog.record("CONFIG_VALIDATION_WARNING", "Libbox.checkConfig unavailable in environment: " + t.getMessage());
+                Log.w(TAG, "Libbox.checkConfig unavailable in current runtime: " + t.getMessage());
+            } else {
+                DiagnosticLog.record("CONFIG_VALIDATION_ERROR", "Native Libbox.checkConfig rejected configuration: " + t.getMessage());
+                throw new IllegalArgumentException("Native sing-box validation failed: " + t.getMessage(), t);
+            }
+        }
+
+        // 2. High-level structural and semantic validation
         try {
             JSONObject root = new JSONObject(configJson);
 
@@ -241,6 +267,34 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             JSONArray outbounds = root.getJSONArray("outbounds");
             if (outbounds.length() == 0) {
                 throw new IllegalArgumentException("sing-box configuration contains an empty 'outbounds' array");
+            }
+
+            // Track all registered tags across endpoints and outbounds to prevent duplicate tags
+            java.util.HashSet<String> allTags = new java.util.HashSet<>();
+
+            if (root.has("endpoints")) {
+                JSONArray endpoints = root.optJSONArray("endpoints");
+                if (endpoints != null) {
+                    for (int i = 0; i < endpoints.length(); i++) {
+                        JSONObject ep = endpoints.getJSONObject(i);
+                        String epTag = ep.optString("tag", "");
+                        if (!epTag.isEmpty()) {
+                            if (!allTags.add(epTag)) {
+                                throw new IllegalArgumentException("Duplicate tag across endpoints/outbounds: " + epTag);
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (int i = 0; i < outbounds.length(); i++) {
+                JSONObject o = outbounds.getJSONObject(i);
+                String oTag = o.optString("tag", "");
+                if (!oTag.isEmpty()) {
+                    if (!allTags.add(oTag)) {
+                        throw new IllegalArgumentException("Duplicate tag across endpoints/outbounds: " + oTag);
+                    }
+                }
             }
 
             // Inspect the primary proxy: check endpoints first (WireGuard v1.14.1), then outbounds
@@ -293,9 +347,12 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             }
 
             if ("wireguard".equalsIgnoreCase(type)) {
-                String privateKey = primaryProxy.optString("private_key", "");
+                String privateKey = primaryProxy.optString("private_key", "").trim();
                 if (privateKey.isEmpty()) {
                     throw new IllegalArgumentException("WireGuard configuration missing required 'private_key'");
+                }
+                if (!isValidBase64Key(privateKey, 32)) {
+                    throw new IllegalArgumentException("WireGuard private_key must be a valid 32-byte Base64 key");
                 }
 
                 JSONArray peers = primaryProxy.optJSONArray("peers");
@@ -305,21 +362,35 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                     }
                     JSONObject peer0 = peers.getJSONObject(0);
                     String peerAddr = peer0.optString("address", peer0.optString("server", ""));
-                    String peerPubKey = peer0.optString("public_key", "");
+                    String peerPubKey = peer0.optString("public_key", "").trim();
                     if (peerAddr.isEmpty()) {
                         throw new IllegalArgumentException("WireGuard peer missing 'address' / 'server'");
                     }
                     if (peerPubKey.isEmpty()) {
                         throw new IllegalArgumentException("WireGuard peer missing required 'public_key'");
                     }
+                    if (!isValidBase64Key(peerPubKey, 32)) {
+                        throw new IllegalArgumentException("WireGuard peer public_key must be a valid 32-byte Base64 key");
+                    }
+                    String peerPsk = peer0.optString("pre_shared_key", "").trim();
+                    if (!peerPsk.isEmpty() && !isValidBase64Key(peerPsk, 32)) {
+                        throw new IllegalArgumentException("WireGuard peer pre_shared_key must be a valid 32-byte Base64 key");
+                    }
                 } else {
                     String server = primaryProxy.optString("server", "");
-                    String peerPublicKey = primaryProxy.optString("peer_public_key", "");
+                    String peerPublicKey = primaryProxy.optString("peer_public_key", "").trim();
                     if (server.isEmpty()) {
                         throw new IllegalArgumentException("WireGuard outbound missing 'server' address");
                     }
                     if (peerPublicKey.isEmpty()) {
                         throw new IllegalArgumentException("WireGuard outbound missing required 'peer_public_key'");
+                    }
+                    if (!isValidBase64Key(peerPublicKey, 32)) {
+                        throw new IllegalArgumentException("WireGuard outbound peer_public_key must be a valid 32-byte Base64 key");
+                    }
+                    String outboundPsk = primaryProxy.optString("pre_shared_key", "").trim();
+                    if (!outboundPsk.isEmpty() && !isValidBase64Key(outboundPsk, 32)) {
+                        throw new IllegalArgumentException("WireGuard outbound pre_shared_key must be a valid 32-byte Base64 key");
                     }
                 }
             } else if ("vless".equalsIgnoreCase(type)) {
@@ -340,12 +411,89 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                 if (password.isEmpty()) {
                     throw new IllegalArgumentException("Trojan outbound missing 'password'");
                 }
+            } else if ("vmess".equalsIgnoreCase(type)) {
+                String server = primaryProxy.optString("server", "");
+                String uuid = primaryProxy.optString("uuid", "");
+                if (server.isEmpty()) {
+                    throw new IllegalArgumentException("VMess outbound missing 'server' address");
+                }
+                if (uuid.isEmpty()) {
+                    throw new IllegalArgumentException("VMess outbound missing 'uuid'");
+                }
+            } else if ("shadowsocks".equalsIgnoreCase(type)) {
+                String server = primaryProxy.optString("server", "");
+                String password = primaryProxy.optString("password", "");
+                if (server.isEmpty()) {
+                    throw new IllegalArgumentException("Shadowsocks outbound missing 'server' address");
+                }
+                if (password.isEmpty()) {
+                    throw new IllegalArgumentException("Shadowsocks outbound missing 'password'");
+                }
+            }
+
+            // Verify DNS detour references if present
+            if (root.has("dns")) {
+                JSONObject dns = root.optJSONObject("dns");
+                if (dns != null && dns.has("servers")) {
+                    JSONArray dnsServers = dns.optJSONArray("servers");
+                    if (dnsServers != null) {
+                        for (int i = 0; i < dnsServers.length(); i++) {
+                            JSONObject srv = dnsServers.getJSONObject(i);
+                            String detour = srv.optString("detour", "");
+                            if (!detour.isEmpty() && !allTags.contains(detour)) {
+                                throw new IllegalArgumentException("DNS server detours to unknown outbound/endpoint tag: " + detour);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Verify Route rule destinations if present
+            if (root.has("route")) {
+                JSONObject route = root.optJSONObject("route");
+                if (route != null) {
+                    String finalOutbound = route.optString("final", "");
+                    if (!finalOutbound.isEmpty() && !allTags.contains(finalOutbound)) {
+                        throw new IllegalArgumentException("Route final destination references unknown outbound/endpoint tag: " + finalOutbound);
+                    }
+                    if (route.has("rules")) {
+                        JSONArray rules = route.optJSONArray("rules");
+                        if (rules != null) {
+                            for (int i = 0; i < rules.length(); i++) {
+                                JSONObject rule = rules.getJSONObject(i);
+                                String outbound = rule.optString("outbound", "");
+                                if (!outbound.isEmpty() && !allTags.contains(outbound)) {
+                                    throw new IllegalArgumentException("Route rule references unknown outbound/endpoint tag: " + outbound);
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
             throw new IllegalArgumentException("Malformed sing-box JSON configuration: " + e.getMessage(), e);
+        }
+    }
+
+    private static boolean isValidBase64Key(String key, int expectedBytes) {
+        if (key == null) return false;
+        String trimmed = key.trim();
+        if (trimmed.length() >= 2 && ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'")))) {
+            trimmed = trimmed.substring(1, trimmed.length() - 1).trim();
+        }
+        if (trimmed.isEmpty()) return false;
+        try {
+            String normalized = trimmed.replace('-', '+').replace('_', '/');
+            int padLen = (4 - (normalized.length() % 4)) % 4;
+            StringBuilder sb = new StringBuilder(normalized);
+            for (int i = 0; i < padLen; i++) sb.append('=');
+            byte[] decoded = Base64.decode(sb.toString(), Base64.DEFAULT);
+            return decoded != null && decoded.length == expectedBytes;
+        } catch (Throwable t) {
+            return false;
         }
     }
 
@@ -371,8 +519,9 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent == null) {
-            DiagnosticLog.record("SERVICE_START", "onStartCommand with null intent (restarted by system)");
-            return START_STICKY;
+            DiagnosticLog.record("SERVICE_START", "onStartCommand with null intent (restarted by system - terminating)");
+            stopSelf();
+            return START_NOT_STICKY;
         }
 
         String action = intent.getAction();
@@ -387,7 +536,7 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             DiagnosticLog.record("STOP_REQUEST_SOURCE", "unknown action: " + action);
         }
 
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     @Override
@@ -451,79 +600,67 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
         }
     }
 
-    private synchronized void startVpn(String configJson) {
+    private void notifyStateChange(String status, String message) {
+        currentStatus = status;
+        final VpnEventListener listener = eventListener;
+        if (listener != null) {
+            try {
+                listener.onStateChange(status, message);
+            } catch (Throwable t) {
+                Log.w(TAG, "Error in eventListener.onStateChange: " + t.getMessage());
+            }
+        }
+    }
+
+    private void startVpn(final String configJson) {
+        final long sessionId = sessionGeneration.incrementAndGet();
         isStopping.set(false);
         isRunning.set(true);
-        DiagnosticLog.record("CORE_START", "Starting sing-box core with payload length: " + (configJson != null ? configJson.length() : 0));
-        currentStatus = "connecting";
-        if (eventListener != null) {
-            eventListener.onStateChange("connecting", null);
+        DiagnosticLog.record("CONFIG_RECEIVED", "session #" + sessionId + " received (payload length: " + (configJson != null ? configJson.length() : 0) + ")");
+        DiagnosticLog.record("CORE_START", "Queueing startVpn session #" + sessionId);
+        notifyStateChange("connecting", null);
+
+        // Satisfy Android 5-second startForeground contract immediately on the main thread
+        promoteToForeground(buildNotification("Initializing sing-box core..."));
+        DiagnosticLog.record("FOREGROUND_STARTED", "session #" + sessionId + " foreground service active");
+
+        vpnLifecycleExecutor.execute(() -> {
+            executeStartVpn(configJson, sessionId);
+        });
+    }
+
+    private void executeStartVpn(String configJson, long sessionId) {
+        // Check if session was superseded or cancelled before worker execution started
+        if (sessionGeneration.get() != sessionId || isStopping.get()) {
+            DiagnosticLog.record("CORE_START", "startVpn session #" + sessionId + " superseded before startup began");
+            return;
         }
 
-        // Start Foreground Service immediately with proper type
-        promoteToForeground(buildNotification("Initializing sing-box core..."));
+        DiagnosticLog.record("CORE_START", "Executing sing-box core startup for session #" + sessionId);
 
         try {
             // Step 1: Validate config payload
             validateConfig(configJson);
 
             // Extract remote endpoint for latency telemetry
-            try {
-                JSONObject root = new JSONObject(configJson);
-                JSONArray endpoints = root.optJSONArray("endpoints");
-                if (endpoints != null && endpoints.length() > 0) {
-                    for (int i = 0; i < endpoints.length(); i++) {
-                        JSONObject ep = endpoints.getJSONObject(i);
-                        JSONArray peers = ep.optJSONArray("peers");
-                        if (peers != null && peers.length() > 0) {
-                            JSONObject p = peers.getJSONObject(0);
-                            String addr = p.optString("address", p.optString("server", ""));
-                            int port = p.optInt("port", p.optInt("server_port", 51820));
-                            if (!addr.isEmpty()) {
-                                currentServerHost = addr;
-                                currentServerPort = port;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if ("1.1.1.1".equals(currentServerHost)) {
-                    JSONArray outbounds = root.optJSONArray("outbounds");
-                    if (outbounds != null && outbounds.length() > 0) {
-                        for (int i = 0; i < outbounds.length(); i++) {
-                            JSONObject o = outbounds.getJSONObject(i);
-                            if ("proxy-out".equals(o.optString("tag", "")) || i == 0) {
-                                String server = o.optString("server", "");
-                                if (!server.isEmpty()) {
-                                    currentServerHost = server;
-                                    currentServerPort = o.optInt("server_port", 443);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            } catch (Exception ignored) {}
+            extractServerEndpoint(configJson);
 
-            // Step 2: Clean up previous tunnel if any
-            if (commandServer != null) {
-                try {
-                    commandServer.closeService();
-                } catch (Exception ignored) {}
-                try {
-                    commandServer.close();
-                } catch (Exception ignored) {}
-                commandServer = null;
+            // Step 2: Clean up previous tunnel and native instances cleanly under lock
+            synchronized (nativeResourceLock) {
+                cleanupNativeResourcesInternal(false);
             }
 
-            if (tunInterface != null) {
-                try {
-                    tunInterface.close();
-                } catch (Exception ignored) {}
-                tunInterface = null;
+            // Check if superseded or cancelled during cleanup
+            if (sessionGeneration.get() != sessionId || isStopping.get()) {
+                DiagnosticLog.record("CORE_START", "startVpn session #" + sessionId + " cancelled after resource cleanup");
+                synchronized (nativeResourceLock) {
+                    cleanupNativeResourcesInternal(false);
+                }
+                return;
             }
 
             // Step 3: Initialize libbox environment directories
+            DiagnosticLog.record("LIBBOX_SETUP_START", "session #" + sessionId + " starting Libbox.setup");
             SetupOptions setupOptions = new SetupOptions();
             setupOptions.setBasePath(getFilesDir().getPath());
             setupOptions.setWorkingPath(getFilesDir().getPath());
@@ -531,102 +668,54 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             setupOptions.setFixAndroidStack(true);
 
             Libbox.setup(setupOptions);
+            DiagnosticLog.record("LIBBOX_SETUP_SUCCESS", "session #" + sessionId + " Libbox.setup finished successfully");
             Log.i(TAG, "Libbox.setup completed successfully");
 
-            // Step 4: Create and start CommandServer
-            commandServer = new CommandServer(this, this);
-            commandServer.start();
+            // Check if cancelled before starting CommandServer
+            if (sessionGeneration.get() != sessionId || isStopping.get()) {
+                DiagnosticLog.record("CORE_START", "startVpn session #" + sessionId + " cancelled before CommandServer start");
+                return;
+            }
+
+            // Step 4: Create and start CommandServer under lock
+            CommandServer cs;
+            synchronized (nativeResourceLock) {
+                if (sessionGeneration.get() != sessionId || isStopping.get()) {
+                    return;
+                }
+                DiagnosticLog.record("COMMAND_SERVER_START", "session #" + sessionId + " creating and starting CommandServer");
+                cs = new CommandServer(this, this);
+                cs.start();
+                this.commandServer = cs;
+            }
+            DiagnosticLog.record("COMMAND_SERVER_READY", "session #" + sessionId + " CommandServer ready");
             Log.i(TAG, "Libbox CommandServer started");
 
             // Step 5: Start the core service via CommandServer with JSON config and PlatformInterface
-            commandServer.startOrReloadService(configJson, new OverrideOptions());
-            DiagnosticLog.record("CORE_START", "sing-box core service started successfully via CommandServer");
+            // Note: startOrReloadService will synchronously trigger openTun(TunOptions)
+            DiagnosticLog.record("CORE_START_REQUEST", "session #" + sessionId + " invoking startOrReloadService");
+            cs.startOrReloadService(configJson, new OverrideOptions());
+            DiagnosticLog.record("CORE_START_SUCCESS", "sing-box core service started successfully via CommandServer (session #" + sessionId + ")");
 
-            currentStatus = "core_running";
-            DiagnosticLog.record("STATE_CHANGE", "Tunnel state transitioned to core_running");
-            if (eventListener != null) {
-                eventListener.onStateChange("core_running", "sing-box core initialized");
+            // Check if cancelled after startOrReloadService
+            if (sessionGeneration.get() != sessionId || isStopping.get()) {
+                DiagnosticLog.record("CORE_START", "startVpn session #" + sessionId + " cancelled after core start; rolling back");
+                synchronized (nativeResourceLock) {
+                    cleanupNativeResourcesInternal(false);
+                }
+                return;
             }
 
+            DiagnosticLog.record("STATE_CHANGE", "Tunnel state transitioned to core_running");
+            notifyStateChange("core_running", "sing-box core initialized");
+
             // Step 6: Connect CommandClient for real-time telemetry from core
-            try {
-                CommandClientOptions clientOpts = new CommandClientOptions();
-                clientOpts.addCommand(Libbox.CommandStatus);
-                clientOpts.addCommand(Libbox.CommandLog);
-                clientOpts.setStatusInterval(1000000000L); // 1 sec interval
-
-                commandClient = new CommandClient(new CommandClientHandler() {
-                    @Override
-                    public void connected() {
-                        Log.i(TAG, "CommandClient connected to sing-box core");
-                    }
-
-                    @Override
-                    public void disconnected(String message) {
-                        Log.d(TAG, "CommandClient disconnected: " + message);
-                    }
-
-                    @Override
-                    public void clearLogs() {}
-
-                    @Override
-                    public void initializeClashMode(StringIterator modeList, String currentMode) {}
-
-                    @Override
-                    public void setDefaultLogLevel(int level) {}
-
-                    @Override
-                    public void updateClashMode(String newMode) {}
-
-                    @Override
-                    public void writeConnectionEvents(ConnectionEvents events) {}
-
-                    @Override
-                    public void writeDNSQuery(DnsQuery query) {}
-
-                    @Override
-                    public void writeGroups(OutboundGroupIterator iterator) {}
-
-                    @Override
-                    public void writeLogs(LogIterator messageList) {
-                        if (messageList != null) {
-                            while (messageList.hasNext()) {
-                                LogEntry entry = messageList.next();
-                                if (entry != null) {
-                                    String msg = entry.getMessage();
-                                    if (msg != null && (msg.contains("ERROR") || msg.contains("failed") || msg.contains("FATAL"))) {
-                                        DiagnosticLog.record("OUTBOUND_ERROR", msg);
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    @Override
-                    public void writeOutbounds(OutboundGroupItemIterator iterator) {}
-
-                    @Override
-                    public void writeStatus(StatusMessage status) {
-                        if (status != null && !isStopping.get()) {
-                            coreDownlinkSpeed = status.getDownlink();
-                            coreUplinkSpeed = status.getUplink();
-                            coreDownlinkTotal = status.getDownlinkTotal();
-                            coreUplinkTotal = status.getUplinkTotal();
-
-                            if (("core_running".equals(currentStatus) || "tunnel_verified".equals(currentStatus)) &&
-                                (coreDownlinkTotal > 0 || status.getConnectionsOut() > 0)) {
-                                currentStatus = "connected";
-                                DiagnosticLog.record("STATE_CHANGE", "Tunnel verified and passing traffic (connected)");
-                                if (eventListener != null) {
-                                    eventListener.onStateChange("connected", "Tunnel active and passing traffic");
-                                }
-                            }
-                        }
-                    }
-                }, clientOpts);
-                commandClient.connect();
-            } catch (Throwable t) {
-                Log.w(TAG, "CommandClient setup note: " + t.getMessage());
+            synchronized (nativeResourceLock) {
+                if (sessionGeneration.get() != sessionId || isStopping.get()) {
+                    cleanupNativeResourcesInternal(false);
+                    return;
+                }
+                setupCommandClient(sessionId);
             }
 
             uptimeSeconds = 0;
@@ -641,54 +730,104 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             }
 
             startTelemetryLoop();
-            Log.i(TAG, "NullVpnService running in production mode");
+            Log.i(TAG, "NullVpnService running in production mode (session #" + sessionId + ")");
 
         } catch (Throwable t) {
             String errorMsg = t.getMessage() != null ? t.getMessage() : t.toString();
-            Log.e(TAG, "Failed to start sing-box core: " + errorMsg, t);
-            DiagnosticLog.record("CORE_ERROR", "Failed to start sing-box core: " + errorMsg);
-            currentStatus = "error";
-            if (eventListener != null) {
-                eventListener.onStateChange("error", errorMsg);
+            String sanitizedError = DiagnosticLog.scrubSecrets(errorMsg);
+            Log.e(TAG, "Failed to start sing-box core for session #" + sessionId + ": " + sanitizedError, t);
+            DiagnosticLog.record("CORE_ERROR", "Failed to start sing-box core: " + sanitizedError);
+
+            synchronized (nativeResourceLock) {
+                cleanupNativeResourcesInternal(false);
             }
-            stopVpn("startVpn failure");
+
+            // Only report error if this session wasn't already superseded by a new request or intentional stop
+            if (sessionGeneration.get() == sessionId) {
+                isRunning.set(false);
+                isStopping.set(false);
+                notifyStateChange("error", sanitizedError);
+                try {
+                    stopForeground(true);
+                } catch (Exception ignored) {}
+                stopSelf();
+            }
         }
     }
 
-    private void stopVpn(String source) {
-        DiagnosticLog.record("STOP_REQUEST_SOURCE", source);
-        if (!isRunning.get() || !isStopping.compareAndSet(false, true)) {
-            Log.i(TAG, "stopVpn ignored: already stopping or not running (source: " + source + ")");
+    private void stopVpn(final String source) {
+        final long stopSessionId = sessionGeneration.incrementAndGet();
+        DiagnosticLog.record("DISCONNECT_REQUEST", "session #" + stopSessionId + " requested from " + source);
+        DiagnosticLog.record("STOP_REQUEST_SOURCE", "stopVpn requested from " + source + " for session #" + stopSessionId);
+
+        // Idempotency: if already disconnected, not running, and all native handles are null, no-op early
+        if (!isRunning.get() && "disconnected".equals(currentStatus) && commandServer == null && tunInterface == null) {
+            Log.i(TAG, "stopVpn ignored: already disconnected and idle (source: " + source + ")");
             return;
         }
 
-        Log.i(TAG, "Stopping NullVpnService (source: " + source + ", was " + currentStatus + ")");
-        DiagnosticLog.record("CORE_STOP", "Initiating shutdown from " + source + " (was " + currentStatus + ")");
+        isStopping.set(true);
+        notifyStateChange("disconnecting", "Shutting down tunnel");
+        stopTelemetryLoop();
 
-        currentStatus = "disconnecting";
-        if (eventListener != null) {
-            eventListener.onStateChange("disconnecting", "Shutting down tunnel");
-        }
+        vpnLifecycleExecutor.execute(() -> {
+            executeStopVpn(source, stopSessionId);
+        });
+    }
+
+    private void executeStopVpn(String source, long stopSessionId) {
+        DiagnosticLog.record("CORE_STOP_REQUEST", "session #" + stopSessionId + " executing shutdown from " + source);
+        DiagnosticLog.record("CORE_STOP", "Executing shutdown from " + source + " (was " + currentStatus + ", stopSession #" + stopSessionId + ")");
 
         stopTelemetryLoop();
 
+        synchronized (nativeResourceLock) {
+            boolean fromServiceStopCallback = "serviceStop callback".equals(source);
+            cleanupNativeResourcesInternal(fromServiceStopCallback);
+        }
+
+        // Only transition to disconnected if a newer startup hasn't been queued in the meantime
+        if (sessionGeneration.get() == stopSessionId) {
+            isRunning.set(false);
+            isStopping.set(false);
+            notifyStateChange("disconnected", null);
+
+            DiagnosticLog.record("CORE_STOP", "Core stopped cleanly from " + source);
+
+            try {
+                stopForeground(true);
+            } catch (Exception ignored) {}
+            stopSelf();
+        } else {
+            DiagnosticLog.record("CORE_STOP", "Stop completed but superseded by newer session #" + sessionGeneration.get());
+        }
+    }
+
+    private void cleanupNativeResourcesInternal(boolean fromServiceStopCallback) {
+        // 1. CommandClient
         if (commandClient != null) {
+            DiagnosticLog.record("COMMAND_CLIENT_DISCONNECT", "Disconnecting CommandClient");
             try {
                 commandClient.disconnect();
-            } catch (Throwable ignored) {}
+            } catch (Throwable t) {
+                Log.w(TAG, "Error disconnecting CommandClient: " + t.getMessage());
+            }
             commandClient = null;
         }
 
+        // 2. CommandServer
         if (commandServer != null) {
             CommandServer cs = commandServer;
             commandServer = null;
-            if (!"serviceStop callback".equals(source)) {
+            if (!fromServiceStopCallback) {
+                DiagnosticLog.record("COMMAND_SERVER_CLOSE_SERVICE", "Closing CommandServer service");
                 try {
                     cs.closeService();
                 } catch (Exception e) {
                     DiagnosticLog.record("CORE_ERROR", "Error in commandServer.closeService: " + e.getMessage());
                 }
             }
+            DiagnosticLog.record("COMMAND_SERVER_CLOSE", "Closing CommandServer");
             try {
                 cs.close();
             } catch (Exception e) {
@@ -696,29 +835,139 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
             }
         }
 
+        // 3. TUN Interface
         if (tunInterface != null) {
             ParcelFileDescriptor tun = tunInterface;
             tunInterface = null;
+            DiagnosticLog.record("TUN_CLOSE", "Closing TUN interface");
             try {
                 tun.close();
             } catch (Exception e) {
                 DiagnosticLog.record("CORE_ERROR", "Error closing TUN interface: " + e.getMessage());
             }
         }
+    }
 
-        currentStatus = "disconnected";
-        isRunning.set(false);
-
-        if (eventListener != null) {
-            eventListener.onStateChange("disconnected", null);
-        }
-
-        DiagnosticLog.record("CORE_STOP", "Core stopped cleanly from " + source);
-
+    private void extractServerEndpoint(String configJson) {
         try {
-            stopForeground(true);
+            JSONObject root = new JSONObject(configJson);
+            JSONArray endpoints = root.optJSONArray("endpoints");
+            if (endpoints != null && endpoints.length() > 0) {
+                for (int i = 0; i < endpoints.length(); i++) {
+                    JSONObject ep = endpoints.getJSONObject(i);
+                    JSONArray peers = ep.optJSONArray("peers");
+                    if (peers != null && peers.length() > 0) {
+                        JSONObject p = peers.getJSONObject(0);
+                        String addr = p.optString("address", p.optString("server", ""));
+                        int port = p.optInt("port", p.optInt("server_port", 51820));
+                        if (!addr.isEmpty()) {
+                            currentServerHost = addr;
+                            currentServerPort = port;
+                            return;
+                        }
+                    }
+                }
+            }
+            if ("1.1.1.1".equals(currentServerHost)) {
+                JSONArray outbounds = root.optJSONArray("outbounds");
+                if (outbounds != null && outbounds.length() > 0) {
+                    for (int i = 0; i < outbounds.length(); i++) {
+                        JSONObject o = outbounds.getJSONObject(i);
+                        if ("proxy-out".equals(o.optString("tag", "")) || i == 0) {
+                            String server = o.optString("server", "");
+                            if (!server.isEmpty()) {
+                                currentServerHost = server;
+                                currentServerPort = o.optInt("server_port", 443);
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
         } catch (Exception ignored) {}
-        stopSelf();
+    }
+
+    private void setupCommandClient(final long sessionId) {
+        try {
+            CommandClientOptions clientOpts = new CommandClientOptions();
+            clientOpts.addCommand(Libbox.CommandStatus);
+            clientOpts.addCommand(Libbox.CommandLog);
+            clientOpts.setStatusInterval(1000000000L); // 1 sec interval
+
+            commandClient = new CommandClient(new CommandClientHandler() {
+                @Override
+                public void connected() {
+                    Log.i(TAG, "CommandClient connected to sing-box core (session #" + sessionId + ")");
+                }
+
+                @Override
+                public void disconnected(String message) {
+                    Log.d(TAG, "CommandClient disconnected: " + message);
+                }
+
+                @Override
+                public void clearLogs() {}
+
+                @Override
+                public void initializeClashMode(StringIterator modeList, String currentMode) {}
+
+                @Override
+                public void setDefaultLogLevel(int level) {}
+
+                @Override
+                public void updateClashMode(String newMode) {}
+
+                @Override
+                public void writeConnectionEvents(ConnectionEvents events) {}
+
+                @Override
+                public void writeDNSQuery(DnsQuery query) {}
+
+                @Override
+                public void writeGroups(OutboundGroupIterator iterator) {}
+
+                @Override
+                public void writeLogs(LogIterator messageList) {
+                    if (messageList != null) {
+                        try {
+                            while (messageList.hasNext()) {
+                                LogEntry entry = messageList.next();
+                                if (entry != null) {
+                                    String msg = entry.getMessage();
+                                    if (msg != null && (msg.contains("ERROR") || msg.contains("failed") || msg.contains("FATAL"))) {
+                                        DiagnosticLog.record("OUTBOUND_ERROR", msg);
+                                    }
+                                }
+                            }
+                        } catch (Throwable t) {
+                            Log.w(TAG, "Safe handling: exception iterating native log messages: " + t.getMessage());
+                        }
+                    }
+                }
+
+                @Override
+                public void writeOutbounds(OutboundGroupItemIterator iterator) {}
+
+                @Override
+                public void writeStatus(StatusMessage status) {
+                    if (status != null && !isStopping.get() && sessionGeneration.get() == sessionId) {
+                        coreDownlinkSpeed = status.getDownlink();
+                        coreUplinkSpeed = status.getUplink();
+                        coreDownlinkTotal = status.getDownlinkTotal();
+                        coreUplinkTotal = status.getUplinkTotal();
+
+                        if (("core_running".equals(currentStatus) || "tunnel_verified".equals(currentStatus)) &&
+                            (coreDownlinkTotal > 0 || status.getConnectionsOut() > 0)) {
+                            DiagnosticLog.record("STATE_CHANGE", "Tunnel verified and passing traffic (connected)");
+                            notifyStateChange("connected", "Tunnel active and passing traffic");
+                        }
+                    }
+                }
+            }, clientOpts);
+            commandClient.connect();
+        } catch (Throwable t) {
+            Log.w(TAG, "CommandClient setup note: " + t.getMessage());
+        }
     }
 
     // ==========================================
@@ -745,129 +994,149 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     public int openTun(TunOptions options) throws Exception {
         Log.i(TAG, "sing-box requested openTun with MTU=" + options.getMTU() + ", autoRoute=" + options.getAutoRoute());
 
-        Builder builder = new Builder();
-        builder.setSession("Null VPN");
-
-        int mtu = options.getMTU();
-        builder.setMtu(mtu > 0 ? mtu : 1500);
-
-        // Configure IPv4 addresses
-        RoutePrefixIterator inet4 = options.getInet4Address();
-        boolean hasIpv4 = false;
-        while (inet4 != null && inet4.hasNext()) {
-            RoutePrefix prefix = inet4.next();
-            builder.addAddress(prefix.address(), prefix.prefix());
-            hasIpv4 = true;
-            Log.d(TAG, "openTun: addAddress IPv4 " + prefix.address() + "/" + prefix.prefix());
-        }
-        if (!hasIpv4) {
-            builder.addAddress("172.19.0.1", 30);
-        }
-
-        // Configure IPv6 addresses
-        boolean hasIpv6 = false;
-        RoutePrefixIterator inet6 = options.getInet6Address();
-        while (inet6 != null && inet6.hasNext()) {
-            RoutePrefix prefix = inet6.next();
-            try {
-                builder.addAddress(prefix.address(), prefix.prefix());
-                hasIpv6 = true;
-                Log.d(TAG, "openTun: addAddress IPv6 " + prefix.address() + "/" + prefix.prefix());
-            } catch (Exception e) {
-                Log.w(TAG, "openTun: IPv6 address rejected by kernel: " + e.getMessage());
+        synchronized (nativeResourceLock) {
+            if (isStopping.get()) {
+                throw new IllegalStateException("openTun aborted: service is stopping");
             }
-        }
 
-        // Configure Routing: Default routes or specific routes
-        if (options.getAutoRoute()) {
-            builder.addRoute("0.0.0.0", 0);
-            if (hasIpv6) {
+            if (this.tunInterface != null) {
                 try {
-                    builder.addRoute("::", 0);
+                    this.tunInterface.close();
+                } catch (Exception ignored) {}
+                this.tunInterface = null;
+            }
+
+            Builder builder = new Builder();
+            builder.setSession("Null VPN");
+
+            int mtu = options.getMTU();
+            builder.setMtu(mtu > 0 ? mtu : 1500);
+
+            // Configure IPv4 addresses
+            RoutePrefixIterator inet4 = options.getInet4Address();
+            boolean hasIpv4 = false;
+            while (inet4 != null && inet4.hasNext()) {
+                RoutePrefix prefix = inet4.next();
+                builder.addAddress(prefix.address(), prefix.prefix());
+                hasIpv4 = true;
+                Log.d(TAG, "openTun: addAddress IPv4 " + prefix.address() + "/" + prefix.prefix());
+            }
+            if (!hasIpv4) {
+                builder.addAddress("172.19.0.1", 30);
+            }
+
+            // Configure IPv6 addresses
+            boolean hasIpv6 = false;
+            RoutePrefixIterator inet6 = options.getInet6Address();
+            while (inet6 != null && inet6.hasNext()) {
+                RoutePrefix prefix = inet6.next();
+                try {
+                    builder.addAddress(prefix.address(), prefix.prefix());
+                    hasIpv6 = true;
+                    Log.d(TAG, "openTun: addAddress IPv6 " + prefix.address() + "/" + prefix.prefix());
                 } catch (Exception e) {
-                    Log.w(TAG, "openTun: IPv6 default route rejected: " + e.getMessage());
+                    Log.w(TAG, "openTun: IPv6 address rejected by kernel: " + e.getMessage());
                 }
             }
-        } else {
-            RoutePrefixIterator routes4 = options.getInet4RouteAddress();
-            boolean hasRoute4 = false;
-            while (routes4 != null && routes4.hasNext()) {
-                RoutePrefix prefix = routes4.next();
-                builder.addRoute(prefix.address(), prefix.prefix());
-                hasRoute4 = true;
-            }
-            if (!hasRoute4) {
+
+            // Configure Routing: Default routes or specific routes
+            if (options.getAutoRoute()) {
                 builder.addRoute("0.0.0.0", 0);
-            }
-
-            RoutePrefixIterator routes6 = options.getInet6RouteAddress();
-            while (routes6 != null && routes6.hasNext()) {
-                RoutePrefix prefix = routes6.next();
-                try {
-                    builder.addRoute(prefix.address(), prefix.prefix());
-                } catch (Exception ignored) {}
-            }
-        } 
-
-        // Configure DNS servers
-        boolean hasDns = false;
-        try {
-            StringIterator dnsServers = options.getDNSServerAddress();
-            while (dnsServers != null && dnsServers.hasNext()) {
-                String dns = dnsServers.next();
-                if (dns != null && !dns.trim().isEmpty()) {
+                if (hasIpv6) {
                     try {
-                        builder.addDnsServer(dns.trim());
-                        hasDns = true;
-                        Log.d(TAG, "openTun: addDnsServer from options: " + dns.trim());
+                        builder.addRoute("::", 0);
                     } catch (Exception e) {
-                        Log.w(TAG, "openTun: Failed to add DNS server " + dns + ": " + e.getMessage());
+                        Log.w(TAG, "openTun: IPv6 default route rejected: " + e.getMessage());
                     }
                 }
-            }
-        } catch (Exception e) {
-            Log.d(TAG, "openTun: getDNSServerAddress: " + e.getMessage());
-        }
-        if (!hasDns) {
-            builder.addDnsServer("172.19.0.1");
-            builder.addDnsServer("1.1.1.1");
-            builder.addDnsServer("8.8.8.8");
-        }
+            } else {
+                RoutePrefixIterator routes4 = options.getInet4RouteAddress();
+                boolean hasRoute4 = false;
+                while (routes4 != null && routes4.hasNext()) {
+                    RoutePrefix prefix = routes4.next();
+                    builder.addRoute(prefix.address(), prefix.prefix());
+                    hasRoute4 = true;
+                }
+                if (!hasRoute4) {
+                    builder.addRoute("0.0.0.0", 0);
+                }
 
-        // Configure Package Exclusions: Exclude Null VPN itself to prevent routing loops!
-        StringIterator excludePackages = options.getExcludePackage();
-        while (excludePackages != null && excludePackages.hasNext()) {
-            String pkg = excludePackages.next();
+                RoutePrefixIterator routes6 = options.getInet6RouteAddress();
+                while (routes6 != null && routes6.hasNext()) {
+                    RoutePrefix prefix = routes6.next();
+                    try {
+                        builder.addRoute(prefix.address(), prefix.prefix());
+                    } catch (Exception ignored) {}
+                }
+            } 
+
+            // Configure DNS servers
+            boolean hasDns = false;
             try {
-                builder.addDisallowedApplication(pkg);
-            } catch (Exception ignored) {}
-        }
-        try {
-            builder.addDisallowedApplication(getPackageName());
-        } catch (Exception e) {
-            Log.w(TAG, "openTun: Failed to disallow own package: " + e.getMessage());
-        }
-
-        builder.setBlocking(false);
-
-        ParcelFileDescriptor pfd = builder.establish();
-        if (pfd == null) {
-            throw new IllegalStateException("VpnService.Builder.establish() returned null - system denied TUN interface creation");
-        }
-
-        this.tunInterface = pfd;
-        int fd = pfd.getFd();
-        Log.i(TAG, "openTun: TUN established successfully with fd=" + fd);
-        DiagnosticLog.record("TUN_OPEN", "TUN established successfully with fd=" + fd + " MTU=" + mtu);
-
-        if ("core_running".equals(currentStatus) || "connecting".equals(currentStatus)) {
-            currentStatus = "tunnel_verified";
-            DiagnosticLog.record("STATE_CHANGE", "Tunnel state transitioned to tunnel_verified");
-            if (eventListener != null) {
-                eventListener.onStateChange("tunnel_verified", "TUN interface established");
+                StringIterator dnsServers = options.getDNSServerAddress();
+                while (dnsServers != null && dnsServers.hasNext()) {
+                    String dns = dnsServers.next();
+                    if (dns != null && !dns.trim().isEmpty()) {
+                        try {
+                            builder.addDnsServer(dns.trim());
+                            hasDns = true;
+                            Log.d(TAG, "openTun: addDnsServer from options: " + dns.trim());
+                        } catch (Exception e) {
+                            Log.w(TAG, "openTun: Failed to add DNS server " + dns + ": " + e.getMessage());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                Log.d(TAG, "openTun: getDNSServerAddress: " + e.getMessage());
             }
+            if (!hasDns) {
+                builder.addDnsServer("172.19.0.1");
+                builder.addDnsServer("1.1.1.1");
+                builder.addDnsServer("8.8.8.8");
+            }
+
+            // Configure Package Exclusions: Exclude Null VPN itself to prevent routing loops!
+            StringIterator excludePackages = options.getExcludePackage();
+            while (excludePackages != null && excludePackages.hasNext()) {
+                String pkg = excludePackages.next();
+                try {
+                    builder.addDisallowedApplication(pkg);
+                } catch (Exception ignored) {}
+            }
+            try {
+                builder.addDisallowedApplication(getPackageName());
+            } catch (Exception e) {
+                Log.w(TAG, "openTun: Failed to disallow own package: " + e.getMessage());
+            }
+
+            builder.setBlocking(false);
+
+            DiagnosticLog.record("TUN_ESTABLISH_START", "Requesting VpnService.Builder.establish() with MTU=" + mtu);
+            ParcelFileDescriptor pfd = builder.establish();
+            if (pfd == null) {
+                DiagnosticLog.record("TUN_ESTABLISH_FAILURE", "VpnService.Builder.establish() returned null");
+                throw new IllegalStateException("VpnService.Builder.establish() returned null - system denied TUN interface creation");
+            }
+            DiagnosticLog.record("TUN_ESTABLISH_SUCCESS", "VpnService.Builder.establish() returned valid PFD");
+
+            if (isStopping.get()) {
+                try {
+                    pfd.close();
+                } catch (Exception ignored) {}
+                throw new IllegalStateException("openTun aborted: service was stopped while establishing TUN");
+            }
+
+            this.tunInterface = pfd;
+            int fd = pfd.getFd();
+            Log.i(TAG, "openTun: TUN established successfully with fd=" + fd);
+            DiagnosticLog.record("TUN_OPEN", "TUN established successfully with fd=" + fd + " MTU=" + mtu);
+
+            if ("core_running".equals(currentStatus) || "connecting".equals(currentStatus)) {
+                DiagnosticLog.record("STATE_CHANGE", "Tunnel state transitioned to tunnel_verified");
+                notifyStateChange("tunnel_verified", "TUN interface established");
+            }
+            return fd;
         }
-        return fd;
     }
 
     public void writeLog(String message) {
@@ -1019,9 +1288,7 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     public void serviceStop() throws Exception {
         Log.i(TAG, "CommandServerHandler: serviceStop requested by core");
         DiagnosticLog.record("STOP_REQUEST_SOURCE", "serviceStop callback from core");
-        new Thread(() -> {
-            stopVpn("serviceStop callback");
-        }, "NullVpn-core-stop").start();
+        stopVpn("serviceStop callback");
     }
 
     @Override
@@ -1133,10 +1400,19 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     @Override
     public void onDestroy() {
         DiagnosticLog.record("SERVICE_DESTROYED", "onDestroy called");
-        stopVpn("onDestroy");
+        sessionGeneration.incrementAndGet();
+        isStopping.set(true);
+        stopTelemetryLoop();
+        synchronized (nativeResourceLock) {
+            cleanupNativeResourcesInternal(false);
+        }
+        notifyStateChange("disconnected", "Service destroyed");
+        isRunning.set(false);
+        isStopping.set(false);
         if (activeInstance == this) {
             activeInstance = null;
         }
+        vpnLifecycleExecutor.shutdownNow();
         super.onDestroy();
     }
 
@@ -1150,11 +1426,35 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
         super.onRevoke();
     }
 
+    public static class DiagnosticProbeResult {
+        public final boolean physicalInternet;
+        public final boolean coreReachability;
+        public final String tunnelReachability; // "true", "false", or "unknown"
+        public final long latencyMs;
+        public final String message;
+
+        public DiagnosticProbeResult(boolean physicalInternet, boolean coreReachability, String tunnelReachability, long latencyMs, String message) {
+            this.physicalInternet = physicalInternet;
+            this.coreReachability = coreReachability;
+            this.tunnelReachability = tunnelReachability;
+            this.latencyMs = latencyMs;
+            this.message = message;
+        }
+    }
+
     public static boolean runNetworkDiagnostics() {
+        return runNetworkDiagnosticsProbe().coreReachability;
+    }
+
+    public static DiagnosticProbeResult runNetworkDiagnosticsProbe() {
         NullVpnService service = activeInstance;
         if (service != null && service.isStopping.get()) {
-            return false;
+            return new DiagnosticProbeResult(false, false, "false", -1L, "VPN service is stopping");
         }
+
+        // 1. Probe physical internet via socket explicitly protected from VPN routing
+        boolean physicalInternet = false;
+        long physicalLatency = -1L;
         Socket testSocket = null;
         try {
             long startTime = System.currentTimeMillis();
@@ -1165,19 +1465,72 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                 } catch (Throwable ignored) {}
             }
             testSocket.connect(new InetSocketAddress("1.1.1.1", 53), 1500);
-            long latency = System.currentTimeMillis() - startTime;
-            Log.i(TAG, "NetworkDiagnostics SUCCESS: Routed packet to 1.1.1.1:53 in " + latency + "ms");
+            physicalLatency = System.currentTimeMillis() - startTime;
             testSocket.close();
-            return true;
+            physicalInternet = true;
+            Log.i(TAG, "DiagnosticProbe physical probe SUCCESS in " + physicalLatency + "ms");
         } catch (Exception e) {
-            Log.e(TAG, "NetworkDiagnostics FAILED to route packet through VPN: " + e.getMessage());
+            Log.w(TAG, "DiagnosticProbe physical probe FAILED: " + e.getMessage());
             if (testSocket != null) {
                 try {
                     testSocket.close();
                 } catch (Exception ignored) {}
             }
-            return false;
         }
+
+        // 2. Query sing-box core reachability and tunnel reachability via libbox CommandClient URLTestOutbound
+        boolean coreReachability = false;
+        String tunnelReachability = "unknown";
+        long tunnelLatency = physicalLatency;
+        String message = physicalInternet ? "Physical internet available; tunnel probe unproven" : "Physical internet unreachable";
+
+        if (service != null && !service.isStopping.get()) {
+            CommandClient client = service.commandClient;
+            if (client != null) {
+                coreReachability = true;
+                try {
+                    // Test outbound directly through sing-box routing engine (proxy-out WireGuard outbound)
+                    // URLTestOutbound does NOT use service.protect(socket); sing-box routes it natively through proxy-out
+                    URLTestOutboundResult res = client.urlTestOutbound("proxy-out", "http://cp.cloudflare.com/generate_204", 3000);
+                    if (res != null) {
+                        String err = res.getError();
+                        int delay = res.getDelay();
+                        if (err == null || err.trim().isEmpty()) {
+                            tunnelReachability = "true";
+                            tunnelLatency = delay > 0 ? delay : physicalLatency;
+                            message = "Tunnel traffic verified via WireGuard outbound (" + tunnelLatency + "ms)";
+                            Log.i(TAG, "DiagnosticProbe URLTestOutbound SUCCESS: delay=" + delay + "ms");
+                        } else {
+                            tunnelReachability = "false";
+                            message = "Tunnel outbound probe returned error: " + err;
+                            Log.w(TAG, "DiagnosticProbe URLTestOutbound FAILED: " + err);
+                        }
+                    } else {
+                        tunnelReachability = "unknown";
+                        message = "Tunnel outbound probe returned null result";
+                    }
+                } catch (Throwable t) {
+                    Log.w(TAG, "DiagnosticProbe URLTestOutbound exception: " + t.getMessage());
+                    // Active probe failed; mark as false or unknown without promoting based on telemetry
+                    tunnelReachability = "false";
+                    message = "Tunnel outbound probe failed (" + t.getMessage() + ")";
+                }
+            } else {
+                if (service.isRunning.get()) {
+                    coreReachability = true;
+                    tunnelReachability = "unknown";
+                    message = "Core running; command client not yet initialized";
+                }
+            }
+        }
+
+        return new DiagnosticProbeResult(
+            physicalInternet,
+            coreReachability,
+            tunnelReachability,
+            tunnelLatency >= 0 ? tunnelLatency : physicalLatency,
+            message
+        );
     }
 
     public static long pingServer(String host, int port) {

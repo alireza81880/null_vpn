@@ -87,6 +87,9 @@ export async function runNetworkDiagnostics(): Promise<DiagnosticsResult> {
         ip: ipMatch ? ipMatch[1] : '1.1.1.1',
         message: `Traffic Routing Active (HTTP RTT: ${latency}ms)`,
         timestamp: Date.now(),
+        physicalInternet: true,
+        coreReachability: true,
+        tunnelReachability: 'unknown',
       };
     }
 
@@ -97,6 +100,9 @@ export async function runNetworkDiagnostics(): Promise<DiagnosticsResult> {
       latencyMs: latency,
       message: `Traffic Routing Active (Simulated TUN interface - ${latency}ms)`,
       timestamp: Date.now(),
+      physicalInternet: true,
+      coreReachability: true,
+      tunnelReachability: 'unknown',
     };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -106,6 +112,9 @@ export async function runNetworkDiagnostics(): Promise<DiagnosticsResult> {
       latencyMs: Date.now() - startTime,
       message: `Traffic Routing Probe Failed: ${msg}`,
       timestamp: Date.now(),
+      physicalInternet: false,
+      coreReachability: false,
+      tunnelReachability: 'false',
     };
   }
 }

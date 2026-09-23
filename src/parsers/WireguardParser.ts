@@ -1,4 +1,5 @@
 import type { ParseResult, ParsedTunnel, WireguardParams } from '../types/vpn';
+import { sanitizeWireGuardKey, isValidBase64Key } from '../config/ConfigValidator';
 
 /**
  * Pure parser for WireGuard INI configuration files (.conf).
@@ -50,14 +51,24 @@ export function parseWireGuardConfig(rawText: string): ParseResult {
     return { success: false, error: 'WireGuard config missing [Peer] Endpoint parameter' };
   }
 
-  const privateKey = (iface['privatekey'] || '').trim();
-  const publicKey = (peer['publickey'] || '').trim();
+  const rawPrivateKey = iface['privatekey'] || '';
+  const rawPublicKey = peer['publickey'] || '';
+
+  const privateKey = sanitizeWireGuardKey(rawPrivateKey);
+  const publicKey = sanitizeWireGuardKey(rawPublicKey);
 
   if (!privateKey) {
     return { success: false, error: 'WireGuard config missing [Interface] PrivateKey parameter' };
   }
+  if (!isValidBase64Key(privateKey, 32)) {
+    return { success: false, error: 'WireGuard [Interface] PrivateKey must be a valid 32-byte Base64 key' };
+  }
+
   if (!publicKey) {
     return { success: false, error: 'WireGuard config missing [Peer] PublicKey parameter' };
+  }
+  if (!isValidBase64Key(publicKey, 32)) {
+    return { success: false, error: 'WireGuard [Peer] PublicKey must be a valid 32-byte Base64 key' };
   }
 
   let host = endpoint;
@@ -81,7 +92,11 @@ export function parseWireGuardConfig(rawText: string): ParseResult {
   }
 
   // Preserve PresharedKey if provided
-  const preSharedKey = (peer['presharedkey'] || iface['presharedkey'] || '').trim() || undefined;
+  const rawPsk = peer['presharedkey'] || iface['presharedkey'] || '';
+  const preSharedKey = rawPsk ? sanitizeWireGuardKey(rawPsk) : undefined;
+  if (preSharedKey && !isValidBase64Key(preSharedKey, 32)) {
+    return { success: false, error: 'WireGuard [Peer] PresharedKey must be a valid 32-byte Base64 key' };
+  }
 
   // Preserve PersistentKeepalive if provided
   let persistentKeepalive: number | undefined;

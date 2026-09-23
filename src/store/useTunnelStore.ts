@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useAppStore } from './useAppStore';
 import { UriParserFactory } from '../parsers/UriParserFactory';
 import { buildUniversalSingBoxConfig } from '../config/SingboxConfigBuilder';
-import { validateSingBoxConfig } from '../config/ConfigValidator';
+import { validateSingBoxConfig, isValidBase64Key, sanitizeWireGuardKey } from '../config/ConfigValidator';
 import type {
   TunnelProtocol,
   WireguardParams,
@@ -45,32 +45,48 @@ const loadPersistedTunnels = (): TunnelItem[] => {
     const raw = localStorage.getItem(STORAGE_KEY_TUNNELS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Filter out any WireGuard tunnels with invalid or corrupt keys
+        return parsed.filter((t: any) => {
+          if (t && t.protocol === 'wireguard') {
+            const priv = sanitizeWireGuardKey(t.wireguard?.privateKey);
+            const pub = sanitizeWireGuardKey(t.wireguard?.publicKey);
+            return isValidBase64Key(priv, 32) && isValidBase64Key(pub, 32);
+          }
+          return Boolean(t && t.id && t.protocol);
+        });
+      }
     }
     // Fallback: check useAppStore configs
     const appConfigsRaw = localStorage.getItem('aegis_vpn_configs');
     if (appConfigsRaw) {
       const appConfigs = JSON.parse(appConfigsRaw);
       if (Array.isArray(appConfigs) && appConfigs.length > 0) {
-        return appConfigs.map((c: any) => ({
-          id: c.id,
-          name: c.name,
-          protocol: 'wireguard' as TunnelProtocol,
-          endpoint: c.endpoint || '127.0.0.1:51820',
-          host: c.endpoint?.split(':')[0] || '127.0.0.1',
-          port: parseInt(c.endpoint?.split(':')[1] || '51820', 10),
-          wireguard: {
-            address: c.interface?.address,
-            dns: c.interface?.dns,
-            privateKey: c.interface?.privateKey,
-            publicKey: c.peer?.publicKey,
-            allowedIPs: c.peer?.allowedIPs,
-            persistentKeepalive: c.peer?.persistentKeepalive,
-            mtu: c.interface?.mtu,
-          },
-          rawConfig: c.rawConfig || '',
-          createdAt: c.createdAt || Date.now(),
-        }));
+        return appConfigs
+          .filter((c: any) => {
+            const priv = sanitizeWireGuardKey(c.interface?.privateKey);
+            const pub = sanitizeWireGuardKey(c.peer?.publicKey);
+            return isValidBase64Key(priv, 32) && isValidBase64Key(pub, 32);
+          })
+          .map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            protocol: 'wireguard' as TunnelProtocol,
+            endpoint: c.endpoint || '127.0.0.1:51820',
+            host: c.endpoint?.split(':')[0] || '127.0.0.1',
+            port: parseInt(c.endpoint?.split(':')[1] || '51820', 10),
+            wireguard: {
+              address: c.interface?.address,
+              dns: c.interface?.dns,
+              privateKey: sanitizeWireGuardKey(c.interface?.privateKey),
+              publicKey: sanitizeWireGuardKey(c.peer?.publicKey),
+              allowedIPs: c.peer?.allowedIPs,
+              persistentKeepalive: c.peer?.persistentKeepalive,
+              mtu: c.interface?.mtu,
+            },
+            rawConfig: c.rawConfig || '',
+            createdAt: c.createdAt || Date.now(),
+          }));
       }
     }
     return [];

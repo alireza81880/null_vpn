@@ -80,6 +80,13 @@ export function useVpnEngine() {
     return configs.find((c) => c.id === activeConfigId) || configs[0] || null;
   }, [configs, activeConfigId]);
 
+  // Stable references for values used in listeners to prevent re-registration cycles
+  const isAppActiveRef = useRef(isAppActive);
+  isAppActiveRef.current = isAppActive;
+
+  const statsRef = useRef(stats);
+  statsRef.current = stats;
+
   // ==========================================================================
   // UNIFIED TELEMETRY & STATE SUBSCRIPTIONS
   // ==========================================================================
@@ -88,13 +95,11 @@ export function useVpnEngine() {
 
     // PATHWAY 1: Mobile (Capacitor Native Plugin via Android VpnService / iOS NetworkExtension)
     if (platform === 'mobile') {
-      let stateHandle: PluginListenerHandle | null = null;
-      let telemetryHandle: PluginListenerHandle | null = null;
+      const activeHandles: PluginListenerHandle[] = [];
 
-      const setupMobileListeners = async () => {
+      const attachStateListener = async () => {
         try {
-          // Listen to native tunnel lifecycle state changes
-          stateHandle = await CapacitorSingbox.addListener('onStateChange', (payload: VpnStatusPayload) => {
+          const handle = await CapacitorSingbox.addListener('onStateChange', (payload: VpnStatusPayload) => {
             if (!isSubscribed) return;
             switch (payload.status) {
               case 'connecting':
@@ -125,9 +130,20 @@ export function useVpnEngine() {
             }
           });
 
-          // Listen to native telemetry stream (only active when UI is in foreground)
-          telemetryHandle = await CapacitorSingbox.addListener('onTelemetry', (telemetry: VpnTelemetryPayload) => {
-            if (!isSubscribed || !isAppActive) return;
+          if (!isSubscribed) {
+            handle.remove();
+          } else {
+            activeHandles.push(handle);
+          }
+        } catch (err) {
+          console.warn('[SingboxPlugin] Failed to register onStateChange listener:', err);
+        }
+      };
+
+      const attachTelemetryListener = async () => {
+        try {
+          const handle = await CapacitorSingbox.addListener('onTelemetry', (telemetry: VpnTelemetryPayload) => {
+            if (!isSubscribed || !isAppActiveRef.current) return;
 
             updateStats({
               downloadSpeed: telemetry.downloadSpeed,
@@ -139,20 +155,33 @@ export function useVpnEngine() {
               sessionUptime:
                 telemetry.uptimeSeconds !== undefined
                   ? formatUptime(telemetry.uptimeSeconds)
-                  : stats.sessionUptime,
+                  : statsRef.current.sessionUptime,
             });
           });
+
+          if (!isSubscribed) {
+            handle.remove();
+          } else {
+            activeHandles.push(handle);
+          }
         } catch (err) {
-          console.warn('[SingboxPlugin] Failed to register mobile event listeners:', err);
+          console.warn('[SingboxPlugin] Failed to register onTelemetry listener:', err);
         }
       };
 
-      setupMobileListeners();
+      attachStateListener();
+      attachTelemetryListener();
 
       return () => {
         isSubscribed = false;
-        if (stateHandle) stateHandle.remove();
-        if (telemetryHandle) telemetryHandle.remove();
+        activeHandles.forEach((handle) => {
+          try {
+            handle.remove();
+          } catch (err) {
+            console.warn('[SingboxPlugin] Error removing listener handle on cleanup:', err);
+          }
+        });
+        activeHandles.length = 0;
       };
     }
 
@@ -185,7 +214,7 @@ export function useVpnEngine() {
       });
 
       const unsubscribeTelemetry = window.vpnEngine.onTelemetryUpdate((telemetry: VpnTelemetryPayload) => {
-        if (!isSubscribed || !isAppActive) return;
+        if (!isSubscribed || !isAppActiveRef.current) return;
 
         updateStats({
           downloadSpeed: telemetry.downloadSpeed,
@@ -197,7 +226,7 @@ export function useVpnEngine() {
           sessionUptime:
             telemetry.uptimeSeconds !== undefined
               ? formatUptime(telemetry.uptimeSeconds)
-              : stats.sessionUptime,
+              : statsRef.current.sessionUptime,
         });
       });
 
@@ -211,7 +240,7 @@ export function useVpnEngine() {
     return () => {
       isSubscribed = false;
     };
-  }, [platform, isAppActive, setConnectionState, setEngineError, updateStats, stats.sessionUptime]);
+  }, [platform, setConnectionState, setEngineError, updateStats]);
 
   // ==========================================================================
   // UNIFIED CONNECT DISPATCHER

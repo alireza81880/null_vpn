@@ -202,7 +202,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   // 3. Action: Scan QR Code (Viewfinder placeholder & Capacitor QR bridge)
   const handleScanSampleQR = () => {
     // Simulated quick scanner hit
-    const sampleVless = 'vless://b831381d-6324-4d53-ad4f-8cda48b30811@lon.edge.aegis-vpn.io:443?security=reality&type=tcp&sni=lon.edge.aegis-vpn.io&pbk=sample#London-HighSpeed-Reality';
+    const sampleVless = 'vless://b831381d-6324-4d53-ad4f-8cda48b30811@lon.edge.aegis-vpn.io:443?security=reality&type=tcp&sni=lon.edge.aegis-vpn.io&pbk=c2FtcGxlLXdpcmVndWFyZC1wdWJsaWMta2V5LXZwbi10dW5uZWw=&fp=chrome#London-HighSpeed-Reality';
     setRawText(sampleVless);
     setIsScanningQR(false);
     handleProcessImport(sampleVless);

@@ -166,17 +166,17 @@ export const ServersPage: React.FC = () => {
     importSampleConfig();
     // Also inject sample configs into tunnel store
     const sampleWG = `[Interface]
-PrivateKey = aGVsbG8td29ybGQtdGVzdC1rZXktZm9yLXVzZXItYWVnaXM=
+PrivateKey = QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=
 Address = 10.14.0.2/32
 DNS = 1.1.1.1
 
 [Peer]
-PublicKey = c2FtcGxlLXdpcmVndWFyZC1wdWJsaWMta2V5LXZwbi10dW5uZWw=
+PublicKey = p4+N8yK8wM1qW1N9V2v6X7x+K1u9Z4t8Q3b2Y5c6F7A=
 Endpoint = frankfurt.edge.aegis-vpn.io:51820
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25`;
 
-    const sampleVless = `vless://b831381d-6324-4d53-ad4f-8cda48b30811@amsterdam.edge.aegis-vpn.io:443?security=reality&type=tcp&sni=amsterdam.edge.aegis-vpn.io#Amsterdam-Reality-Edge`;
+    const sampleVless = `vless://b831381d-6324-4d53-ad4f-8cda48b30811@amsterdam.edge.aegis-vpn.io:443?security=reality&type=tcp&sni=amsterdam.edge.aegis-vpn.io&pbk=c2FtcGxlLXdpcmVndWFyZC1wdWJsaWMta2V5LXZwbi10dW5uZWw=&fp=chrome#Amsterdam-Reality-Edge`;
     const sampleTrojan = `trojan://securepass8899@tokyo.edge.aegis-vpn.io:443?security=tls&type=ws&sni=tokyo.edge.aegis-vpn.io#Tokyo-HighSpeed-Trojan`;
 
     useTunnelStore.getState().addTunnel(sampleWG);

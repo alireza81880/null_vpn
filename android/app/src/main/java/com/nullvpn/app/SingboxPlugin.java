@@ -165,14 +165,18 @@ public class SingboxPlugin extends Plugin {
     @PluginMethod
     public void runDiagnostics(PluginCall call) {
         new Thread(() -> {
-            boolean success = NullVpnService.runNetworkDiagnostics();
+            NullVpnService.DiagnosticProbeResult probe = NullVpnService.runNetworkDiagnosticsProbe();
             String status = NullVpnService.getCurrentStatus();
             JSObject ret = new JSObject();
-            ret.put("success", success);
+            ret.put("success", "true".equals(probe.tunnelReachability) || probe.coreReachability);
             ret.put("active", "connected".equals(status));
+            ret.put("physicalInternet", probe.physicalInternet);
+            ret.put("coreReachability", probe.coreReachability);
+            ret.put("tunnelReachability", probe.tunnelReachability);
+            ret.put("latencyMs", probe.latencyMs);
             ret.put("ip", "1.1.1.1");
             ret.put("interfaceName", "tun0");
-            ret.put("message", success ? "Traffic routing active via TUN interface" : "Traffic routing probe failed");
+            ret.put("message", probe.message);
             ret.put("timestamp", System.currentTimeMillis());
             call.resolve(ret);
         }).start();

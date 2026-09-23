@@ -20,6 +20,8 @@ import { CapacitorSingbox } from '../plugins/SingboxPlugin';
 import { runNetworkDiagnostics, pingServerEndpoint } from '../utils/networkDiagnostics';
 import { useAppStore } from '../store/useAppStore';
 import { useTunnelStore } from '../store/useTunnelStore';
+import { getWireguardKeyDiagnostics } from '../config/ConfigValidator';
+import type { DiagnosticsResult } from '../types/singbox';
 
 type SessionType = 'current' | 'last';
 type LogLevel = 'all' | 'error' | 'state' | 'warn';
@@ -35,15 +37,25 @@ export const DiagnosticsPage: React.FC = () => {
 
   // Network Diagnostic State
   const [isProbing, setIsProbing] = useState<boolean>(false);
-  const [probeResult, setProbeResult] = useState<{
-    success?: boolean;
-    latencyMs?: number;
-    message?: string;
-    timestamp?: number;
-  } | null>(null);
+  const [probeResult, setProbeResult] = useState<DiagnosticsResult | null>(null);
 
   const connectionState = useAppStore((state) => state.connectionState);
   const activeTunnel = useTunnelStore((state) => state.activeTunnel);
+
+  // Key Integrity Diagnostics for Active WireGuard tunnel
+  const keyDiagnostics = useMemo(() => {
+    if (activeTunnel?.protocol !== 'wireguard' || !activeTunnel.wireguard) return null;
+    const privDiag = getWireguardKeyDiagnostics(activeTunnel.wireguard.privateKey, 32);
+    const pubDiag = getWireguardKeyDiagnostics(activeTunnel.wireguard.publicKey, 32);
+    const pskDiag = activeTunnel.wireguard.preSharedKey
+      ? getWireguardKeyDiagnostics(activeTunnel.wireguard.preSharedKey, 32)
+      : null;
+    return {
+      privateKey: privDiag,
+      publicKey: pubDiag,
+      preSharedKey: pskDiag,
+    };
+  }, [activeTunnel]);
 
   // Fetch persistent diagnostic buffers from native NullVpnService
   const fetchLogs = useCallback(async () => {
@@ -99,7 +111,9 @@ export const DiagnosticsPage: React.FC = () => {
         const pingMs = await pingServerEndpoint(activeTunnel.endpoint);
         const diag = await runNetworkDiagnostics();
         setProbeResult({
+          ...diag,
           success: pingMs >= 0 || diag.success,
+          active: pingMs >= 0 || diag.active,
           latencyMs: pingMs >= 0 ? pingMs : diag.latencyMs,
           message:
             pingMs >= 0
@@ -109,16 +123,12 @@ export const DiagnosticsPage: React.FC = () => {
         });
       } else {
         const diag = await runNetworkDiagnostics();
-        setProbeResult({
-          success: diag.success,
-          latencyMs: diag.latencyMs,
-          message: diag.message || (diag.success ? 'Routing active' : 'Unreachable'),
-          timestamp: Date.now(),
-        });
+        setProbeResult(diag);
       }
     } catch (err) {
       setProbeResult({
         success: false,
+        active: false,
         message: err instanceof Error ? err.message : 'Network probe failed',
         timestamp: Date.now(),
       });
@@ -126,6 +136,47 @@ export const DiagnosticsPage: React.FC = () => {
       setIsProbing(false);
     }
   };
+
+  // Analyze session lifecycle markers for observational status
+  const sessionAnalysis = useMemo(() => {
+    const logs = session === 'current' ? currentLogs : lastLogs;
+    if (logs.length === 0) return null;
+
+    const hasEndedNormally = logs.some((l) => l.includes('CORE_STOP') && (l.includes('stopped cleanly') || l.includes('disconnected')) || l.includes('SERVICE_DESTROYED'));
+    const failedStartup = logs.some((l) => l.includes('CORE_ERROR') || l.includes('TUN_ESTABLISH_FAILURE')) && !logs.some((l) => l.includes('connected'));
+    const failedShutdown = logs.some((l) => l.includes('CORE_STOP') && l.includes('CORE_ERROR'));
+    
+    // Check if session ended abruptly without clean stop
+    const lastMarker = logs[logs.length - 1] || '';
+    const isAbruptTermination = !hasEndedNormally && (
+      lastMarker.includes('LIBBOX_SETUP_START') ||
+      lastMarker.includes('COMMAND_SERVER_START') ||
+      lastMarker.includes('CORE_START_REQUEST') ||
+      lastMarker.includes('TUN_ESTABLISH_START') ||
+      lastMarker.includes('COMMAND_CLIENT_CONNECT') ||
+      lastMarker.includes('connected') ||
+      lastMarker.includes('UNCAUGHT_EXCEPTION')
+    );
+
+    let statusText = 'Last session ended normally';
+    let statusType: 'normal' | 'startup_failed' | 'shutdown_failed' | 'possible_crash' = 'normal';
+
+    if (failedStartup) {
+      statusText = 'Session recorded failure during startup';
+      statusType = 'startup_failed';
+    } else if (failedShutdown) {
+      statusText = 'Session recorded error during shutdown';
+      statusType = 'shutdown_failed';
+    } else if (isAbruptTermination && session === 'last') {
+      statusText = 'Previous session may have terminated abruptly (process or native crash suspected; cause unverified)';
+      statusType = 'possible_crash';
+    } else if (!hasEndedNormally && session === 'last') {
+      statusText = 'Previous session closed without standard shutdown marker';
+      statusType = 'normal';
+    }
+
+    return { statusText, statusType, lastMarker };
+  }, [session, currentLogs, lastLogs]);
 
   // Filter logs by selected level and search query
   const displayedLogs = useMemo(() => {
@@ -235,32 +286,128 @@ export const DiagnosticsPage: React.FC = () => {
         {/* Live Network Probe Result Card */}
         {probeResult && (
           <div
-            className="mt-4 p-3.5 rounded-xl border flex items-center justify-between transition-all"
+            className="mt-4 p-3.5 rounded-xl border flex flex-col gap-2 transition-all"
             style={{
               backgroundColor: probeResult.success ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
               borderColor: probeResult.success ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
             }}
           >
-            <div className="flex items-center gap-2.5">
-              {probeResult.success ? (
-                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-              ) : (
-                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-              )}
-              <div>
-                <span className="text-xs sm:text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                  {probeResult.message}
-                </span>
-                {probeResult.latencyMs !== undefined && probeResult.latencyMs >= 0 && (
-                  <span className="ms-2 text-xs font-mono font-bold text-emerald-400">
-                    {probeResult.latencyMs} ms
-                  </span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                {probeResult.success ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
                 )}
+                <div>
+                  <span className="text-xs sm:text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {probeResult.message}
+                  </span>
+                  {probeResult.latencyMs !== undefined && probeResult.latencyMs >= 0 && (
+                    <span className="ms-2 text-xs font-mono font-bold text-emerald-400">
+                      {probeResult.latencyMs} ms
+                    </span>
+                  )}
+                </div>
               </div>
+              <span className="text-[11px] text-gray-500 font-mono">
+                {new Date(probeResult.timestamp || Date.now()).toLocaleTimeString()}
+              </span>
             </div>
-            <span className="text-[11px] text-gray-500 font-mono">
-              {new Date(probeResult.timestamp || Date.now()).toLocaleTimeString()}
-            </span>
+
+            {/* Tri-state Reachability Breakdown */}
+            {(probeResult.physicalInternet !== undefined || probeResult.tunnelReachability !== undefined) && (
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[var(--border-subtle)] text-[11px] font-mono">
+                <span className="text-gray-400">Evidence:</span>
+                <span className={`px-2 py-0.5 rounded border ${
+                  probeResult.physicalInternet
+                    ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/50'
+                    : 'bg-rose-950/40 text-rose-300 border-rose-800/50'
+                }`}>
+                  Physical: {probeResult.physicalInternet ? 'OK (protected bypass)' : 'FAIL'}
+                </span>
+                <span className={`px-2 py-0.5 rounded border ${
+                  probeResult.coreReachability
+                    ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/50'
+                    : 'bg-rose-950/40 text-rose-300 border-rose-800/50'
+                }`}>
+                  Core: {probeResult.coreReachability ? 'Active' : 'Offline'}
+                </span>
+                <span className={`px-2 py-0.5 rounded border ${
+                  probeResult.tunnelReachability === 'true'
+                    ? 'bg-emerald-950/40 text-emerald-300 border-emerald-800/50'
+                    : probeResult.tunnelReachability === 'false'
+                    ? 'bg-rose-950/40 text-rose-300 border-rose-800/50'
+                    : 'bg-amber-950/40 text-amber-300 border-amber-800/50'
+                }`}>
+                  Tunnel: {probeResult.tunnelReachability === 'true' ? 'VERIFIED' : probeResult.tunnelReachability === 'false' ? 'FAILED' : 'UNPROVEN'}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* WireGuard Key Integrity Diagnostics (Redacted - No Raw Secrets) */}
+        {keyDiagnostics && (
+          <div
+            className="mt-4 p-3.5 rounded-xl border flex flex-col gap-2 transition-all"
+            style={{
+              backgroundColor: 'var(--bg-surface-elevated)',
+              borderColor: 'var(--border-subtle)',
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  WireGuard Cryptographic Key Integrity (Pre-Flight Audit)
+                </span>
+              </div>
+              <span className="text-[10px] text-gray-500 font-mono">SECRETS REDACTED</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1 text-[11px] font-mono">
+              {/* Private Key Audit */}
+              <div className="p-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface-glass)]">
+                <div className="text-gray-400 mb-1 flex items-center justify-between">
+                  <span>Interface.PrivateKey</span>
+                  <span className={keyDiagnostics.privateKey.base64Valid && keyDiagnostics.privateKey.decodedLength === 32 ? 'text-emerald-400' : 'text-rose-400'}>
+                    {keyDiagnostics.privateKey.base64Valid && keyDiagnostics.privateKey.decodedLength === 32 ? 'VALID' : 'INVALID'}
+                  </span>
+                </div>
+                <div className="text-gray-500 text-[10px]">
+                  Present: {keyDiagnostics.privateKey.present ? 'YES' : 'NO'} | B64: {keyDiagnostics.privateKey.base64Valid ? 'YES' : 'NO'} | Decoded: {keyDiagnostics.privateKey.decodedLength}B / 32B
+                </div>
+              </div>
+
+              {/* Public Key Audit */}
+              <div className="p-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface-glass)]">
+                <div className="text-gray-400 mb-1 flex items-center justify-between">
+                  <span>Peer.PublicKey</span>
+                  <span className={keyDiagnostics.publicKey.base64Valid && keyDiagnostics.publicKey.decodedLength === 32 ? 'text-emerald-400' : 'text-rose-400'}>
+                    {keyDiagnostics.publicKey.base64Valid && keyDiagnostics.publicKey.decodedLength === 32 ? 'VALID' : 'INVALID'}
+                  </span>
+                </div>
+                <div className="text-gray-500 text-[10px]">
+                  Present: {keyDiagnostics.publicKey.present ? 'YES' : 'NO'} | B64: {keyDiagnostics.publicKey.base64Valid ? 'YES' : 'NO'} | Decoded: {keyDiagnostics.publicKey.decodedLength}B / 32B
+                </div>
+              </div>
+
+              {/* Pre-shared Key Audit */}
+              {keyDiagnostics.preSharedKey && (
+                <div className="p-2 rounded border border-[var(--border-subtle)] bg-[var(--bg-surface-glass)]">
+                  <div className="text-gray-400 mb-1 flex items-center justify-between">
+                    <span>Peer.PresharedKey</span>
+                    <span className={keyDiagnostics.preSharedKey.base64Valid && keyDiagnostics.preSharedKey.decodedLength === 32 ? 'text-emerald-400' : 'text-rose-400'}>
+                      {keyDiagnostics.preSharedKey.base64Valid && keyDiagnostics.preSharedKey.decodedLength === 32 ? 'VALID' : 'INVALID'}
+                    </span>
+                  </div>
+                  <div className="text-gray-500 text-[10px]">
+                    Present: {keyDiagnostics.preSharedKey.present ? 'YES' : 'NO'} | B64: {keyDiagnostics.preSharedKey.base64Valid ? 'YES' : 'NO'} | Decoded: {keyDiagnostics.preSharedKey.decodedLength}B / 32B
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -348,6 +495,37 @@ export const DiagnosticsPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Observational Session Lifecycle Status Banner */}
+      {sessionAnalysis && (
+        <div
+          className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 text-xs font-mono transition-all ${
+            sessionAnalysis.statusType === 'startup_failed' || sessionAnalysis.statusType === 'shutdown_failed'
+              ? 'bg-rose-950/20 border-rose-500/30 text-rose-300'
+              : sessionAnalysis.statusType === 'possible_crash'
+              ? 'bg-amber-950/20 border-amber-500/30 text-amber-300'
+              : 'bg-emerald-950/10 border-emerald-500/20 text-emerald-300'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                sessionAnalysis.statusType === 'startup_failed' || sessionAnalysis.statusType === 'shutdown_failed'
+                  ? 'bg-rose-400 animate-pulse'
+                  : sessionAnalysis.statusType === 'possible_crash'
+                  ? 'bg-amber-400'
+                  : 'bg-emerald-400'
+              }`}
+            />
+            <span className="font-semibold">{sessionAnalysis.statusText}</span>
+          </div>
+          {sessionAnalysis.lastMarker && (
+            <span className="text-[10px] text-gray-500 truncate max-w-[280px] hidden sm:inline">
+              Marker: {sessionAnalysis.lastMarker.slice(0, 60)}...
+            </span>
+          )}
+        </div>
+      )}
 
       {/* 3. Search & Level Filters */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2.5">

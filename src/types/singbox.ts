@@ -148,6 +148,8 @@ export interface SingBoxConfigObject {
 
 export type SingBoxConfigInput = SingBoxConfigObject | string;
 
+export type TunnelReachabilityStatus = 'true' | 'false' | 'unknown';
+
 export interface DiagnosticsResult {
   success: boolean;
   active: boolean;
@@ -156,6 +158,9 @@ export interface DiagnosticsResult {
   interfaceName?: string;
   message: string;
   timestamp: number;
+  physicalInternet?: boolean;
+  coreReachability?: boolean;
+  tunnelReachability?: TunnelReachabilityStatus;
 }
 
 /**

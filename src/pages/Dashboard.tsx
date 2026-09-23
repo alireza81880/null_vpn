@@ -78,12 +78,12 @@ export const Dashboard: React.FC = () => {
   const handleLoadSample = () => {
     importSampleConfig();
     const sampleWG = `[Interface]
-PrivateKey = aGVsbG8td29ybGQtdGVzdC1rZXktZm9yLXVzZXItYWVnaXM=
+PrivateKey = QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=
 Address = 10.14.0.2/32
 DNS = 1.1.1.1
 
 [Peer]
-PublicKey = c2FtcGxlLXdpcmVndWFyZC1wdWJsaWMta2V5LXZwbi10dW5uZWw=
+PublicKey = p4+N8yK8wM1qW1N9V2v6X7x+K1u9Z4t8Q3b2Y5c6F7A=
 Endpoint = frankfurt.edge.aegis-vpn.io:51820
 AllowedIPs = 0.0.0.0/0, ::/0
 PersistentKeepalive = 25`;
