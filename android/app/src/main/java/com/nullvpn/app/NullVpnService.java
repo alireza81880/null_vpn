@@ -68,6 +68,7 @@ import io.nekohasekai.libbox.StatusMessage;
 import io.nekohasekai.libbox.StringIterator;
 import io.nekohasekai.libbox.SystemProxyStatus;
 import io.nekohasekai.libbox.TunOptions;
+import io.nekohasekai.libbox.URLTestOutboundResult;
 import io.nekohasekai.libbox.WIFIState;
 
 /**
