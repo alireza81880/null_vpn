@@ -57,7 +57,99 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  if (!isOpen) return null;
+  // Camera stream teardown
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+  };
+
+  // Reset modal state when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      setIsScanningQR(false);
+      setCameraError(null);
+      setError(null);
+      setSuccessMsg(null);
+    }
+  }, [isOpen]);
+
+  // Camera QR Scanner Lifecycle & BarcodeDetector Loop
+  useEffect(() => {
+    if (!isOpen || !isScanningQR) {
+      stopCamera();
+      return;
+    }
+
+    let active = true;
+    let animFrame: number | null = null;
+
+    const startCamera = async () => {
+      setCameraError(null);
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Camera device access is not supported in this environment.');
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+        });
+        if (!active) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+
+        // Native BarcodeDetector (Supported in Chromium / modern Android WebView)
+        if (typeof window !== 'undefined' && (window as any).BarcodeDetector) {
+          try {
+            const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+            const scanFrame = async () => {
+              if (!active || !videoRef.current) return;
+              if (videoRef.current.readyState >= 2) {
+                try {
+                  const barcodes = await detector.detect(videoRef.current);
+                  if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                    const scanned = barcodes[0].rawValue.trim();
+                    if (scanned) {
+                      stopCamera();
+                      setIsScanningQR(false);
+                      setRawText(scanned);
+                      handleProcessImport(scanned);
+                      return;
+                    }
+                  }
+                } catch {}
+              }
+              if (active) {
+                animFrame = requestAnimationFrame(scanFrame);
+              }
+            };
+            animFrame = requestAnimationFrame(scanFrame);
+          } catch {}
+        }
+      } catch (err: any) {
+        if (active) {
+          setCameraError(err?.message || 'Camera permission was denied or camera is unavailable.');
+        }
+      }
+    };
+
+    startCamera();
+
+    return () => {
+      active = false;
+      if (animFrame) cancelAnimationFrame(animFrame);
+      stopCamera();
+    };
+  }, [isOpen, isScanningQR]);
 
   // Detect protocol type dynamically for syntax preview badge
   const detectedProtocol = (() => {
@@ -164,90 +256,6 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     }
   };
 
-  // Camera stream teardown
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  };
-
-  // Camera QR Scanner Lifecycle & BarcodeDetector Loop
-  useEffect(() => {
-    if (!isScanningQR) {
-      stopCamera();
-      return;
-    }
-
-    let active = true;
-    let animFrame: number | null = null;
-
-    const startCamera = async () => {
-      setCameraError(null);
-      try {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-          throw new Error('Camera device access is not supported in this environment.');
-        }
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } },
-        });
-        if (!active) {
-          stream.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        streamRef.current = stream;
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(() => {});
-        }
-
-        // Native BarcodeDetector (Supported in Chromium / modern Android WebView)
-        if (typeof window !== 'undefined' && (window as any).BarcodeDetector) {
-          try {
-            const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-            const scanFrame = async () => {
-              if (!active || !videoRef.current) return;
-              if (videoRef.current.readyState >= 2) {
-                try {
-                  const barcodes = await detector.detect(videoRef.current);
-                  if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
-                    const scanned = barcodes[0].rawValue.trim();
-                    if (scanned) {
-                      stopCamera();
-                      setIsScanningQR(false);
-                      setRawText(scanned);
-                      handleProcessImport(scanned);
-                      return;
-                    }
-                  }
-                } catch {}
-              }
-              if (active) {
-                animFrame = requestAnimationFrame(scanFrame);
-              }
-            };
-            animFrame = requestAnimationFrame(scanFrame);
-          } catch {}
-        }
-      } catch (err: any) {
-        if (active) {
-          setCameraError(err?.message || 'Camera permission was denied or camera is unavailable.');
-        }
-      }
-    };
-
-    startCamera();
-
-    return () => {
-      active = false;
-      if (animFrame) cancelAnimationFrame(animFrame);
-      stopCamera();
-    };
-  }, [isScanningQR]);
-
   // 1. Action: Paste from Clipboard (Capacitor Native Bridge -> Web navigator fallback)
   const handlePasteClipboard = async () => {
     setError(null);
@@ -348,6 +356,8 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     setRawText(sampleVless);
     handleProcessImport(sampleVless);
   };
+
+  if (!isOpen) return null;
 
   return (
     <div
