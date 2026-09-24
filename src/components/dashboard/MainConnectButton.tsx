@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { motion } from 'motion/react';
-import { Power, ShieldCheck, RefreshCw } from 'lucide-react';
+import { Power, ShieldCheck, RefreshCw, X } from 'lucide-react';
 import type { ConnectionState } from '../../types/vpn';
 import { useI18n } from '../../i18n/I18nContext';
 
@@ -25,7 +25,7 @@ export interface MainConnectButtonProps {
  * - Proportional, vertically centered, and NEVER an oversized white circle
  * - Disconnected: dark neumorphic pill, small neutral circular icon container, no aggressive glow
  * - Connected: same dimensions, accent-colored circular icon container, calm & premium
- * - Connecting: subtle pulse/spin on icon, same dimensions
+ * - Connecting: active CANCEL action, subtle pulse/spin on icon, same dimensions
  * - Active/Pressed: translateY(2–3px), slightly reduced elevation
  * - Hover: subtle highlight, small elevation increase
  */
@@ -40,7 +40,8 @@ export const MainConnectButton: React.FC<MainConnectButtonProps> = memo(({
   const { t } = useI18n();
 
   const isConnected = connectionState === 'connected';
-  const isButtonDisabled = disabled || isConnecting;
+  // While connecting, button is NOT disabled - it acts as an immediate CANCEL action
+  const isButtonDisabled = disabled && !isConnecting;
 
   return (
     <div className={`w-full max-w-sm sm:max-w-md mx-auto flex flex-col items-center ${className}`}>
@@ -48,7 +49,13 @@ export const MainConnectButton: React.FC<MainConnectButtonProps> = memo(({
         id={id}
         type="button"
         role="button"
-        aria-label={isConnected ? t('dashboard.disconnect') : t('dashboard.connect')}
+        aria-label={
+          isConnecting
+            ? (t('common.cancel') || 'Cancel connection attempt')
+            : isConnected
+            ? t('dashboard.disconnect')
+            : t('dashboard.connect')
+        }
         aria-pressed={isConnected}
         disabled={isButtonDisabled}
         onClick={onClick}
@@ -59,9 +66,11 @@ export const MainConnectButton: React.FC<MainConnectButtonProps> = memo(({
           transform: 'translateZ(0)',
           willChange: 'transform',
           backgroundColor: 'var(--bg-surface)',
-          borderColor: 'var(--border-subtle)',
+          borderColor: isConnecting ? 'rgba(239, 68, 68, 0.4)' : 'var(--border-subtle)',
           boxShadow: isConnected
             ? 'var(--neo-raised-lg), 0 0 16px var(--status-connected-glow)'
+            : isConnecting
+            ? 'var(--neo-raised-lg), 0 0 14px rgba(239, 68, 68, 0.25)'
             : 'var(--neo-raised-lg)',
         }}
         className={`
@@ -74,33 +83,33 @@ export const MainConnectButton: React.FC<MainConnectButtonProps> = memo(({
         {/* Optical Spacer Left (matches icon container size to keep center text centered) */}
         <div className="w-10 sm:w-12 shrink-0 pointer-events-none" aria-hidden="true" />
 
-        {/* Center Typography: CONNECT / DISCONNECT */}
+        {/* Center Typography: CONNECT / DISCONNECT / CANCEL */}
         <div className="flex-1 flex flex-col items-center justify-center text-center px-2 min-w-0">
           <span
             style={{
               color: isConnected
                 ? 'var(--status-connected)'
                 : isConnecting
-                ? 'var(--status-connecting)'
+                ? '#ef4444'
                 : 'var(--text-primary)',
             }}
             className="text-xs sm:text-sm font-bold tracking-widest uppercase truncate font-mono"
           >
             {isConnecting
-              ? t('dashboard.connecting')
+              ? (t('common.cancel') || 'CANCEL')
               : isConnected
               ? t('dashboard.disconnect')
               : t('dashboard.connect')}
           </span>
 
           <span
-            style={{ color: 'var(--text-muted)' }}
+            style={{ color: isConnecting ? '#f87171' : 'var(--text-muted)' }}
             className="text-[10px] font-mono tracking-tight truncate hidden sm:inline-block"
           >
             {isConnected
               ? t('dashboard.protected')
               : isConnecting
-              ? 'Handshaking...'
+              ? 'Tap to cancel'
               : t('dashboard.tapToToggle')}
           </span>
         </div>
@@ -112,18 +121,22 @@ export const MainConnectButton: React.FC<MainConnectButtonProps> = memo(({
             backgroundColor: isConnected
               ? 'var(--accent-primary)'
               : isConnecting
-              ? 'var(--status-connecting)'
+              ? 'rgba(239, 68, 68, 0.15)'
               : 'var(--bg-surface-elevated)',
             borderColor: isConnected
               ? 'var(--accent-primary)'
               : isConnecting
-              ? 'var(--status-connecting)'
+              ? 'rgba(239, 68, 68, 0.5)'
               : 'var(--border-subtle)',
-            color: isConnected || isConnecting ? 'var(--accent-foreground, #ffffff)' : 'var(--text-secondary)',
+            color: isConnected
+              ? 'var(--accent-foreground, #ffffff)'
+              : isConnecting
+              ? '#ef4444'
+              : 'var(--text-secondary)',
             boxShadow: isConnected
               ? 'var(--neo-raised-sm), 0 0 14px var(--accent-glow)'
               : isConnecting
-              ? 'var(--neo-raised-sm), 0 0 14px var(--status-connecting-glow)'
+              ? 'var(--neo-raised-sm), 0 0 10px rgba(239, 68, 68, 0.3)'
               : 'var(--neo-raised-sm)',
           }}
           className={`
@@ -133,13 +146,16 @@ export const MainConnectButton: React.FC<MainConnectButtonProps> = memo(({
           `}
         >
           {isConnecting ? (
-            <motion.div
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }}
-              className="flex items-center justify-center"
-            >
-              <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5" />
-            </motion.div>
+            <div className="relative flex items-center justify-center">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ repeat: Infinity, duration: 1.2, ease: 'linear' }}
+                className="absolute inset-0 flex items-center justify-center opacity-30 pointer-events-none"
+              >
+                <RefreshCw className="w-5 h-5 sm:w-6 sm:h-6 text-red-400" />
+              </motion.div>
+              <X className="w-4 h-4 sm:w-5 sm:h-5 text-red-500 stroke-[2.5]" />
+            </div>
           ) : isConnected ? (
             <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.2]" />
           ) : (

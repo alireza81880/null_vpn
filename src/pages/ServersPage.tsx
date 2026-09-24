@@ -21,9 +21,11 @@ import { ImportModal } from '../components/modals/ImportModal';
 import { LiquidButton } from '../components/ui/LiquidButton';
 import { BentoCard } from '../components/ui/BentoCard';
 import { pingServerEndpoint } from '../utils/networkDiagnostics';
+import { useVpnEngine } from '../hooks/useVpnEngine';
 
 export const ServersPage: React.FC = () => {
   const { t } = useI18n();
+  const { switchTunnel } = useVpnEngine();
 
   // Zustand subscriptions
   const tunnels = useTunnelStore((state) => state.tunnels);
@@ -115,16 +117,16 @@ export const ServersPage: React.FC = () => {
 
   // Quick Connect / Select Handler
   const handleSelectTunnel = useCallback(
-    (id: string) => {
+    async (id: string) => {
       const selected = tunnels.find((tun) => tun.id === id);
-      setActiveTunnel(id);
+      await switchTunnel(id);
 
       if (selected) {
         setFeedbackToast(`Active profile set to "${selected.name}"`);
         setTimeout(() => setFeedbackToast(null), 2500);
       }
     },
-    [setActiveTunnel, tunnels]
+    [switchTunnel, tunnels]
   );
 
   // Delete Tunnel Handler

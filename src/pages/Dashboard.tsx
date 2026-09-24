@@ -41,7 +41,7 @@ export const Dashboard: React.FC = () => {
   const activeTunnel = useActiveTunnel();
   const activeConfig = useActiveConfig();
 
-  const { toggle, error, clearError, isMobile, isElectron } = useVpnEngine();
+  const { toggle, switchTunnel, error, clearError, isMobile, isElectron } = useVpnEngine();
 
   const { t } = useI18n();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -299,10 +299,9 @@ PersistentKeepalive = 25`;
                       <button
                         key={c.id}
                         type="button"
-                        onClick={() => {
-                          setActiveTunnel(c.id);
-                          setActiveConfigId(c.id);
+                        onClick={async () => {
                           setIsTunnelDropdownOpen(false);
+                          await switchTunnel(c.id);
                         }}
                         style={{
                           backgroundColor: isSelected

@@ -87,6 +87,55 @@ export function useVpnEngine() {
   const statsRef = useRef(stats);
   statsRef.current = stats;
 
+  // Attempt generation tracker and connection timeout watchdog
+  const attemptGenerationRef = useRef<number>(0);
+  const connectionTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const clearConnectionTimeout = useCallback(() => {
+    if (connectionTimeoutRef.current) {
+      clearTimeout(connectionTimeoutRef.current);
+      connectionTimeoutRef.current = null;
+    }
+  }, []);
+
+  const startConnectionTimeout = useCallback((expectedGen: number) => {
+    clearConnectionTimeout();
+    connectionTimeoutRef.current = setTimeout(async () => {
+      if (attemptGenerationRef.current !== expectedGen) {
+        return;
+      }
+
+      const currentState = useAppStore.getState().connectionState;
+      if (currentState !== 'connecting') {
+        return;
+      }
+
+      // Invalidate current attempt generation
+      attemptGenerationRef.current++;
+      connectionTimeoutRef.current = null;
+
+      // Stop active OS / daemon session
+      try {
+        if (platform === 'mobile') {
+          await CapacitorSingbox.stopEngine();
+        } else if (platform === 'electron' && window.vpnEngine) {
+          await window.vpnEngine.stop();
+        }
+      } catch (err) {
+        console.warn('[useVpnEngine] Timeout abort error:', err);
+      }
+
+      // Deterministically transition UI to disconnected with clear timeout error
+      setConnectionState('disconnected');
+      setEngineError('Connection timed out. Please try again.');
+      updateStats({
+        downloadSpeed: 0,
+        uploadSpeed: 0,
+        connectedSince: null,
+      });
+    }, 18000); // 18-second connection timeout
+  }, [clearConnectionTimeout, platform, setConnectionState, setEngineError, updateStats]);
+
   // ==========================================================================
   // UNIFIED TELEMETRY & STATE SUBSCRIPTIONS
   // ==========================================================================
@@ -105,9 +154,19 @@ export function useVpnEngine() {
               case 'connecting':
               case 'core_running':
               case 'tunnel_verified':
+                // If the user canceled or disconnected, ignore late connecting callbacks
+                if (useAppStore.getState().connectionState === 'disconnected' && !connectionTimeoutRef.current) {
+                  return;
+                }
                 setConnectionState('connecting');
                 break;
               case 'connected':
+                clearConnectionTimeout();
+                // If user canceled before connected arrived, kill the zombie engine and ignore
+                if (useAppStore.getState().connectionState === 'disconnected') {
+                  CapacitorSingbox.stopEngine().catch(() => {});
+                  return;
+                }
                 setConnectionState('connected');
                 setEngineError(null);
                 // Execute silent background routing verification
@@ -118,12 +177,15 @@ export function useVpnEngine() {
                 }).catch(() => {});
                 break;
               case 'disconnecting':
+                clearConnectionTimeout();
                 setConnectionState('disconnecting');
                 break;
               case 'disconnected':
+                clearConnectionTimeout();
                 setConnectionState('disconnected');
                 break;
               case 'error':
+                clearConnectionTimeout();
                 setConnectionState('disconnected');
                 setEngineError(payload.message || 'Mobile VPN engine error occurred');
                 break;
@@ -174,6 +236,7 @@ export function useVpnEngine() {
 
       return () => {
         isSubscribed = false;
+        clearConnectionTimeout();
         activeHandles.forEach((handle) => {
           try {
             handle.remove();
@@ -191,9 +254,17 @@ export function useVpnEngine() {
         if (!isSubscribed) return;
         switch (payload.status) {
           case 'connecting':
+            if (useAppStore.getState().connectionState === 'disconnected' && !connectionTimeoutRef.current) {
+              return;
+            }
             setConnectionState('connecting');
             break;
           case 'connected':
+            clearConnectionTimeout();
+            if (useAppStore.getState().connectionState === 'disconnected') {
+              window.vpnEngine.stop().catch(() => {});
+              return;
+            }
             setConnectionState('connected');
             setEngineError(null);
             // Execute silent background routing verification
@@ -204,9 +275,11 @@ export function useVpnEngine() {
             }).catch(() => {});
             break;
           case 'disconnected':
+            clearConnectionTimeout();
             setConnectionState('disconnected');
             break;
           case 'error':
+            clearConnectionTimeout();
             setConnectionState('disconnected');
             setEngineError(payload.message || 'Desktop tunnel error occurred');
             break;
@@ -232,6 +305,7 @@ export function useVpnEngine() {
 
       return () => {
         isSubscribed = false;
+        clearConnectionTimeout();
         unsubscribeStatus();
         unsubscribeTelemetry();
       };
@@ -239,16 +313,20 @@ export function useVpnEngine() {
 
     return () => {
       isSubscribed = false;
+      clearConnectionTimeout();
     };
-  }, [platform, setConnectionState, setEngineError, updateStats]);
+  }, [platform, setConnectionState, setEngineError, updateStats, clearConnectionTimeout]);
 
   // ==========================================================================
   // UNIFIED CONNECT DISPATCHER
   // ==========================================================================
   const connect = useCallback(
     async (customConfig?: SingBoxConfigInput): Promise<boolean> => {
+      clearConnectionTimeout();
+      const currentGen = ++attemptGenerationRef.current;
       setEngineError(null);
       setConnectionState('connecting');
+      startConnectionTimeout(currentGen);
 
       // Resolve tunnel configuration
       let finalConfigObj: SingBoxConfigObject | null = null;
@@ -290,6 +368,8 @@ export function useVpnEngine() {
         } : null);
 
         if (!selectedTunnel) {
+          clearConnectionTimeout();
+          attemptGenerationRef.current++;
           const err = 'No active VPN configuration selected to launch sing-box';
           setEngineError(err);
           setConnectionState('disconnected');
@@ -305,6 +385,8 @@ export function useVpnEngine() {
       // Strict Schema & Cryptographic Validation before native dispatch
       const validation = validateSingBoxConfig(finalConfigObj || finalConfigStr);
       if (!validation.valid) {
+        clearConnectionTimeout();
+        attemptGenerationRef.current++;
         const err = validation.error || 'Invalid sing-box configuration payload';
         setEngineError(err);
         setConnectionState('disconnected');
@@ -316,6 +398,8 @@ export function useVpnEngine() {
         try {
           const result = await CapacitorSingbox.startEngine({ config: finalConfigStr });
           if (!result.success) {
+            clearConnectionTimeout();
+            attemptGenerationRef.current++;
             const errorMsg = result.error || 'Failed to initialize OS VPN Service';
             setEngineError(errorMsg);
             setConnectionState('disconnected');
@@ -323,6 +407,8 @@ export function useVpnEngine() {
           }
           return true;
         } catch (err: unknown) {
+          clearConnectionTimeout();
+          attemptGenerationRef.current++;
           const errorMsg = err instanceof Error ? err.message : 'CapacitorSingbox.startEngine failed';
           setEngineError(errorMsg);
           setConnectionState('disconnected');
@@ -335,6 +421,8 @@ export function useVpnEngine() {
         try {
           const result = await window.vpnEngine.start(finalConfigObj || finalConfigStr);
           if (!result.success) {
+            clearConnectionTimeout();
+            attemptGenerationRef.current++;
             const errorMsg = result.error || 'Failed to start sing-box proxy engine';
             setEngineError(errorMsg);
             setConnectionState('disconnected');
@@ -342,6 +430,8 @@ export function useVpnEngine() {
           }
           return true;
         } catch (err: unknown) {
+          clearConnectionTimeout();
+          attemptGenerationRef.current++;
           const errorMsg = err instanceof Error ? err.message : 'IPC call to vpnEngine.start failed';
           setEngineError(errorMsg);
           setConnectionState('disconnected');
@@ -352,6 +442,7 @@ export function useVpnEngine() {
       // 3. Web Preview Pathway (Graceful preview state transition without fake throughput)
       return new Promise<boolean>((resolve) => {
         setTimeout(() => {
+          clearConnectionTimeout();
           setConnectionState('connected');
           const startTimestamp = Date.now();
 
@@ -370,13 +461,17 @@ export function useVpnEngine() {
         }, 300);
       });
     },
-    [platform, activeConfig, setConnectionState, setEngineError, updateStats]
+    [platform, activeConfig, setConnectionState, setEngineError, updateStats, clearConnectionTimeout, startConnectionTimeout]
   );
 
   // ==========================================================================
   // UNIFIED DISCONNECT DISPATCHER
   // ==========================================================================
   const disconnect = useCallback(async (): Promise<boolean> => {
+    // 1. Advance attempt generation to invalidate in-flight connection callbacks
+    attemptGenerationRef.current++;
+    // 2. Clear connection timeout watchdog
+    clearConnectionTimeout();
     setEngineError(null);
 
     // 1. Mobile Pathway
@@ -415,7 +510,48 @@ export function useVpnEngine() {
       connectedSince: null,
     });
     return true;
-  }, [platform, setConnectionState, setEngineError, updateStats]);
+  }, [platform, setConnectionState, setEngineError, updateStats, clearConnectionTimeout]);
+
+  /**
+   * Coordinated Profile Switcher
+   * Ensures the previous VPN session is completely stopped before launching a new one.
+   */
+  const switchTunnel = useCallback(
+    async (targetTunnelId: string): Promise<boolean> => {
+      const currentState = useAppStore.getState().connectionState;
+
+      // 1. If currently disconnected, simple state update without restarting engine
+      if (currentState === 'disconnected') {
+        useTunnelStore.getState().setActiveTunnel(targetTunnelId);
+        useAppStore.getState().setActiveConfigId(targetTunnelId);
+        return true;
+      }
+
+      // 2. If connected or connecting:
+      // a) Stop/cancel current session
+      await disconnect();
+
+      // b) Wait for deterministic disconnected state
+      const stopDeadline = Date.now() + 2000;
+      while (Date.now() < stopDeadline) {
+        if (useAppStore.getState().connectionState === 'disconnected') {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      // c) Switch active tunnel and config
+      useTunnelStore.getState().setActiveTunnel(targetTunnelId);
+      useAppStore.getState().setActiveConfigId(targetTunnelId);
+
+      // Settle stores and native service
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      // d) Start newly selected configuration cleanly
+      return await connect();
+    },
+    [disconnect, connect]
+  );
 
   /**
    * Unified Toggle
@@ -436,6 +572,7 @@ export function useVpnEngine() {
     connect,
     disconnect,
     toggle,
+    switchTunnel,
     connectionState,
     error: engineError,
     clearError,

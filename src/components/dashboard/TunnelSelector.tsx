@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Radio, ChevronDown, Check, Globe, Shield, Plus, Sparkles } from 'lucide-react';
 import { useAppStore, useActiveConfig } from '../../store/useAppStore';
 import { useTunnelStore, useActiveTunnel } from '../../store/useTunnelStore';
+import { useVpnEngine } from '../../hooks/useVpnEngine';
 import { useI18n } from '../../i18n/I18nContext';
 
 export interface TunnelSelectorProps {
@@ -21,6 +22,7 @@ export const TunnelSelector: React.FC<TunnelSelectorProps> = React.memo(({ onOpe
 
   const activeTunnel = useActiveTunnel();
   const activeConfig = useActiveConfig();
+  const { switchTunnel } = useVpnEngine();
 
   const { t, isRTL } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
@@ -141,10 +143,9 @@ export const TunnelSelector: React.FC<TunnelSelectorProps> = React.memo(({ onOpe
                     key={config.id}
                     id={`tunnel-option-${config.id}`}
                     type="button"
-                    onClick={() => {
-                      setActiveTunnel(config.id);
-                      setActiveConfigId(config.id);
+                    onClick={async () => {
                       setIsOpen(false);
+                      await switchTunnel(config.id);
                     }}
                     className={`w-full flex items-center justify-between p-2.5 rounded-lg text-start transition-colors cursor-pointer ${
                       isSelected
