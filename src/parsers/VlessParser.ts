@@ -1,6 +1,54 @@
 import type { ParseResult, ParsedTunnel } from '../types/vpn';
 
 /**
+ * Safely extracts a query parameter directly from a URL search query string
+ * without converting '+' to spaces ' ' (which URLSearchParams does under form-urlencoded rules).
+ */
+export function extractQueryParamRaw(search: string, paramName: string): string | undefined {
+  if (!search) return undefined;
+  const regex = new RegExp(`(?:^|[?&])${paramName}=([^&#]*)`, 'i');
+  const match = search.match(regex);
+  if (!match) return undefined;
+  const raw = match[1];
+  try {
+    // decodeURIComponent decodes %2B -> +, %2F -> /, %3D -> =
+    // but crucially preserves literal '+' characters
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * Normalizes Reality public key:
+ * - Strips whitespace and surrounding quotes
+ * - Recovers '+' if URL decoding converted '+' to space ' '
+ * - Normalizes Base64URL (- and _) to standard Base64 (+ and /)
+ * - Adds padding '=' if missing (unpadded 43 chars -> 44 chars)
+ */
+export function normalizeRealityPublicKey(key: string | undefined): string | undefined {
+  if (!key || typeof key !== 'string') return undefined;
+  let cleaned = key.trim();
+  if (
+    cleaned.length >= 2 &&
+    ((cleaned.startsWith('"') && cleaned.endsWith('"')) ||
+     (cleaned.startsWith("'") && cleaned.endsWith("'")))
+  ) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+  // If spaces were introduced by application/x-www-form-urlencoded parsing (+ -> ' '), restore '+'
+  cleaned = cleaned.replace(/ /g, '+');
+  // Normalize Base64URL (- and _) to standard Base64 (+ and /)
+  cleaned = cleaned.replace(/-/g, '+').replace(/_/g, '/');
+  // Restore Base64 '=' padding if missing (32 bytes = 43 chars unpadded -> 44 chars with '=')
+  const padLen = (4 - (cleaned.length % 4)) % 4;
+  if (padLen > 0) {
+    cleaned = cleaned + '='.repeat(padLen);
+  }
+  return cleaned;
+}
+
+/**
  * Pure parser for VLESS URI links:
  * vless://uuid@host:port?type=ws&security=tls&host=...&sni=...&path=...#name
  *
@@ -82,8 +130,21 @@ export function parseVlessUri(rawUri: string): ParseResult {
     const wsHost = params.get('host') || undefined;
 
     // Reality parameters with aliases (pbk / public_key, sid / short_id)
-    const publicKey = params.get('pbk') || params.get('public_key') || undefined;
-    const shortId = params.get('sid') || params.get('short_id') || undefined;
+    // Extract raw value directly from search string first to avoid application/x-www-form-urlencoded
+    // converting literal '+' into spaces (' '), which corrupts Base64 cryptographic keys.
+    const rawPbk = extractQueryParamRaw(uri.search, 'pbk') ||
+                   extractQueryParamRaw(uri.search, 'public_key') ||
+                   params.get('pbk') ||
+                   params.get('public_key') ||
+                   undefined;
+    const publicKey = normalizeRealityPublicKey(rawPbk);
+
+    const rawSid = extractQueryParamRaw(uri.search, 'sid') ||
+                   extractQueryParamRaw(uri.search, 'short_id') ||
+                   params.get('sid') ||
+                   params.get('short_id') ||
+                   undefined;
+    const shortId = rawSid ? rawSid.trim() : undefined;
 
     if (security === 'reality' && !publicKey) {
       return { success: false, error: 'Invalid Reality parameters: Missing public key (pbk/public_key)' };

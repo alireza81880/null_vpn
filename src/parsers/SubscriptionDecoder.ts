@@ -5,6 +5,7 @@ import type {
   ParsedTunnel,
 } from '../types/vpn';
 import { UriParserFactory } from './UriParserFactory';
+import { normalizeRealityPublicKey } from './VlessParser';
 
 /**
  * Safe UTF-8 Base64 Decoder handling standard, URL-safe base64, and padding variants.
@@ -163,7 +164,7 @@ export class SubscriptionDecoder {
                   : undefined,
               reality: isReality
                 ? {
-                    publicKey: tls.reality.public_key,
+                    publicKey: normalizeRealityPublicKey(tls.reality.public_key) || tls.reality.public_key,
                     shortId: tls.reality.short_id,
                   }
                 : undefined,

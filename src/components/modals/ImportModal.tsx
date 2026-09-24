@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   X,
   Clipboard,
@@ -11,6 +11,7 @@ import {
   Shield,
   Layers,
   Globe,
+  ImageIcon,
 } from 'lucide-react';
 import { useTunnelStore } from '../../store/useTunnelStore';
 import { LiquidButton } from '../ui/LiquidButton';
@@ -47,10 +48,14 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [isScanningQR, setIsScanningQR] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const qrFileInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   if (!isOpen) return null;
 
@@ -159,26 +164,135 @@ export const ImportModal: React.FC<ImportModalProps> = ({
     }
   };
 
-  // 1. Action: Paste from Clipboard
-  const handlePasteClipboard = async () => {
-    setError(null);
-    try {
-      if (!navigator.clipboard || !navigator.clipboard.readText) {
-        throw new Error('Clipboard API is not supported in this environment.');
-      }
-      const text = await navigator.clipboard.readText();
-      if (!text.trim()) {
-        setError('Clipboard is empty.');
-        return;
-      }
-      setRawText(text);
-      handleProcessImport(text);
-    } catch (err: any) {
-      setError(err?.message || 'Unable to read from clipboard. Please paste manually.');
+  // Camera stream teardown
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
     }
   };
 
-  // 2. Action: Import File
+  // Camera QR Scanner Lifecycle & BarcodeDetector Loop
+  useEffect(() => {
+    if (!isScanningQR) {
+      stopCamera();
+      return;
+    }
+
+    let active = true;
+    let animFrame: number | null = null;
+
+    const startCamera = async () => {
+      setCameraError(null);
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Camera device access is not supported in this environment.');
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } },
+        });
+        if (!active) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+
+        // Native BarcodeDetector (Supported in Chromium / modern Android WebView)
+        if (typeof window !== 'undefined' && (window as any).BarcodeDetector) {
+          try {
+            const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+            const scanFrame = async () => {
+              if (!active || !videoRef.current) return;
+              if (videoRef.current.readyState >= 2) {
+                try {
+                  const barcodes = await detector.detect(videoRef.current);
+                  if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                    const scanned = barcodes[0].rawValue.trim();
+                    if (scanned) {
+                      stopCamera();
+                      setIsScanningQR(false);
+                      setRawText(scanned);
+                      handleProcessImport(scanned);
+                      return;
+                    }
+                  }
+                } catch {}
+              }
+              if (active) {
+                animFrame = requestAnimationFrame(scanFrame);
+              }
+            };
+            animFrame = requestAnimationFrame(scanFrame);
+          } catch {}
+        }
+      } catch (err: any) {
+        if (active) {
+          setCameraError(err?.message || 'Camera permission was denied or camera is unavailable.');
+        }
+      }
+    };
+
+    startCamera();
+
+    return () => {
+      active = false;
+      if (animFrame) cancelAnimationFrame(animFrame);
+      stopCamera();
+    };
+  }, [isScanningQR]);
+
+  // 1. Action: Paste from Clipboard (Capacitor Native Bridge -> Web navigator fallback)
+  const handlePasteClipboard = async () => {
+    setError(null);
+    try {
+      let text = '';
+
+      // Primary on mobile/Android: Capacitor Native Clipboard Plugin
+      try {
+        const { Clipboard: CapClipboard } = await import('@capacitor/clipboard');
+        const res = await CapClipboard.read();
+        if (res && typeof res.value === 'string') {
+          text = res.value;
+        }
+      } catch (capErr) {
+        console.warn('[ImportModal] Capacitor clipboard read not available:', capErr);
+      }
+
+      // Secondary fallback: Web standard navigator.clipboard.readText()
+      if (!text && typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.readText) {
+        try {
+          text = await navigator.clipboard.readText();
+        } catch (webErr: any) {
+          if (!text) throw webErr;
+        }
+      }
+
+      const trimmed = text.trim();
+      if (!trimmed) {
+        setError('Clipboard is empty.');
+        return;
+      }
+
+      setRawText(trimmed);
+      handleProcessImport(trimmed);
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (msg.includes('permissions policy') || msg.includes('Permission denied')) {
+        setError('Clipboard access was blocked by system permissions. Please paste directly into the text area below.');
+      } else {
+        setError(err?.message || 'Unable to read from clipboard. Please paste manually.');
+      }
+    }
+  };
+
+  // 2. Action: Import File (.conf / .json / .txt)
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -195,16 +309,43 @@ export const ImportModal: React.FC<ImportModalProps> = ({
       setError('Failed to read file from disk.');
     };
     reader.readAsText(file);
-    // Reset file input value so re-selecting same file triggers change
     e.target.value = '';
   };
 
-  // 3. Action: Scan QR Code (Viewfinder placeholder & Capacitor QR bridge)
+  // Action: Select QR Image from Device Gallery / Photos
+  const handleQrImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      if (typeof window !== 'undefined' && (window as any).BarcodeDetector) {
+        const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+        const bitmap = await createImageBitmap(file);
+        const barcodes = await detector.detect(bitmap);
+        if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+          const scanned = barcodes[0].rawValue.trim();
+          stopCamera();
+          setIsScanningQR(false);
+          setRawText(scanned);
+          handleProcessImport(scanned);
+          return;
+        }
+      }
+      setError('No QR code detected in the selected image. Please paste the config text directly.');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to analyze QR image.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  // 3. Action: Scan Sample QR (Strict 32-byte Base64 Reality public_key)
   const handleScanSampleQR = () => {
-    // Simulated quick scanner hit
-    const sampleVless = 'vless://b831381d-6324-4d53-ad4f-8cda48b30811@lon.edge.aegis-vpn.io:443?security=reality&type=tcp&sni=lon.edge.aegis-vpn.io&pbk=c2FtcGxlLXdpcmVndWFyZC1wdWJsaWMta2V5LXZwbi10dW5uZWw=&fp=chrome#London-HighSpeed-Reality';
-    setRawText(sampleVless);
+    // Valid 32-byte Base64 key: c2FtcGxlLTMyLWJ5dGUtcmVhbGl0eS1wdWJrZXkhISE= (decoded: 32 bytes)
+    const sampleVless = 'vless://b831381d-6324-4d53-ad4f-8cda48b30811@lon.edge.aegis-vpn.io:443?security=reality&type=tcp&sni=lon.edge.aegis-vpn.io&pbk=c2FtcGxlLTMyLWJ5dGUtcmVhbGl0eS1wdWJrZXkhISE=&fp=chrome#London-HighSpeed-Reality';
+    stopCamera();
     setIsScanningQR(false);
+    setRawText(sampleVless);
     handleProcessImport(sampleVless);
   };
 
@@ -233,6 +374,15 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           accept=".conf,.json,.txt,text/plain"
           className="hidden"
           onChange={handleFileSelect}
+        />
+
+        {/* Hidden native QR image file input */}
+        <input
+          ref={qrFileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleQrImageSelect}
         />
 
         {/* Modal Header */}
@@ -290,20 +440,44 @@ export const ImportModal: React.FC<ImportModalProps> = ({
               backgroundColor: 'var(--bg-surface-elevated)',
               borderColor: 'var(--border-glass)',
             }}
-            className="p-6 rounded-2xl border text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[260px]"
+            className="p-6 rounded-2xl border text-center relative overflow-hidden flex flex-col items-center justify-center min-h-[300px]"
           >
             {/* Camera Viewfinder Reticle */}
-            <div className="relative w-48 h-48 rounded-2xl border-2 border-dashed border-[var(--accent-primary)] flex items-center justify-center overflow-hidden mb-4 bg-black/40">
-              <Camera className="w-12 h-12 text-[var(--accent-primary)] opacity-40 animate-pulse" />
+            <div className="relative w-56 h-56 rounded-2xl border-2 border-dashed border-[var(--accent-primary)] flex items-center justify-center overflow-hidden mb-3 bg-black/60 shadow-lg">
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <Camera className="w-12 h-12 text-[var(--accent-primary)] opacity-30 animate-pulse" />
+              </div>
               {/* Animated Laser Scanner Line */}
-              <div className="absolute inset-x-0 top-0 h-0.5 bg-[var(--accent-primary)] shadow-[0_0_12px_var(--accent-primary)] animate-pulse" />
+              <div className="absolute inset-x-0 top-0 h-0.5 bg-[var(--accent-primary)] shadow-[0_0_12px_var(--accent-primary)] animate-pulse pointer-events-none" />
             </div>
 
-            <p className="text-xs font-mono text-[var(--text-secondary)] mb-4">
-              Point camera at configuration QR code or use sample profile.
-            </p>
+            {cameraError ? (
+              <p className="text-xs font-mono text-rose-400 mb-4 px-3 max-w-sm">
+                {cameraError}
+              </p>
+            ) : (
+              <p className="text-xs font-mono text-[var(--text-secondary)] mb-4">
+                Point camera at configuration QR code or choose a photo.
+              </p>
+            )}
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 justify-center">
+              <LiquidButton
+                variant="purple"
+                size="sm"
+                morphology="pill"
+                icon={<ImageIcon className="w-3.5 h-3.5 text-white" />}
+                onClick={() => qrFileInputRef.current?.click()}
+              >
+                Choose Photo
+              </LiquidButton>
               <LiquidButton
                 variant="primary"
                 size="sm"

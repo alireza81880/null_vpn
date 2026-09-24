@@ -6,6 +6,12 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.net.RouteInfo;
 import android.net.TrafficStats;
 import android.net.VpnService;
 import android.os.Build;
@@ -25,12 +31,16 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.InterfaceAddress;
 import java.net.Socket;
 import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Date;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -219,6 +229,9 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     private volatile long coreUplinkTotal = 0L;
     private volatile int coreConnectionsIn = 0;
     private volatile int coreConnectionsOut = 0;
+
+    private volatile InterfaceUpdateListener defaultInterfaceListener = null;
+    private ConnectivityManager.NetworkCallback defaultNetworkCallback = null;
 
     private String currentServerHost = "1.1.1.1";
     private int currentServerPort = 53;
@@ -849,6 +862,18 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
                 DiagnosticLog.record("CORE_ERROR", "Error closing TUN interface: " + e.getMessage());
             }
         }
+
+        // 4. Default Network Monitor Callback
+        if (defaultNetworkCallback != null) {
+            try {
+                ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+                if (cm != null) {
+                    cm.unregisterNetworkCallback(defaultNetworkCallback);
+                }
+            } catch (Exception ignored) {}
+            defaultNetworkCallback = null;
+        }
+        defaultInterfaceListener = null;
     }
 
     private void extractServerEndpoint(String configJson) {
@@ -1181,22 +1206,353 @@ public class NullVpnService extends VpnService implements PlatformInterface, Com
     }
 
     public boolean usePlatformDefaultInterfaceMonitor() {
-        return false;
+        return true;
     }
 
     @Override
-    public void startDefaultInterfaceMonitor(InterfaceUpdateListener listener) throws Exception {}
+    public synchronized void startDefaultInterfaceMonitor(InterfaceUpdateListener listener) throws Exception {
+        this.defaultInterfaceListener = listener;
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (cm == null) return;
+
+        // Perform immediate sync dispatch of current default physical interface
+        notifyDefaultInterfaceUpdate(null);
+
+        // Register dynamic network callback for network handover
+        try {
+            if (defaultNetworkCallback != null) {
+                try {
+                    cm.unregisterNetworkCallback(defaultNetworkCallback);
+                } catch (Exception ignored) {}
+                defaultNetworkCallback = null;
+            }
+
+            NetworkRequest request = new NetworkRequest.Builder()
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                    .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
+                    .build();
+
+            defaultNetworkCallback = new ConnectivityManager.NetworkCallback() {
+                @Override
+                public void onAvailable(Network network) {
+                    notifyDefaultInterfaceUpdate(network);
+                }
+
+                @Override
+                public void onCapabilitiesChanged(Network network, NetworkCapabilities capabilities) {
+                    notifyDefaultInterfaceUpdate(network);
+                }
+
+                @Override
+                public void onLost(Network network) {
+                    notifyDefaultInterfaceUpdate(null);
+                }
+            };
+            cm.registerNetworkCallback(request, defaultNetworkCallback);
+            Log.i(TAG, "startDefaultInterfaceMonitor: registered NetworkCallback for handover");
+            DiagnosticLog.record("DEFAULT_IF_MONITOR", "Started dynamic network monitor");
+        } catch (Throwable t) {
+            Log.w(TAG, "startDefaultInterfaceMonitor failed to register callback: " + t.getMessage());
+        }
+    }
 
     @Override
-    public void closeDefaultInterfaceMonitor(InterfaceUpdateListener listener) throws Exception {}
+    public synchronized void closeDefaultInterfaceMonitor(InterfaceUpdateListener listener) throws Exception {
+        this.defaultInterfaceListener = null;
+        if (defaultNetworkCallback != null) {
+            try {
+                ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+                if (cm != null) {
+                    cm.unregisterNetworkCallback(defaultNetworkCallback);
+                }
+            } catch (Exception ignored) {}
+            defaultNetworkCallback = null;
+        }
+        Log.i(TAG, "closeDefaultInterfaceMonitor: unregistered NetworkCallback");
+        DiagnosticLog.record("DEFAULT_IF_MONITOR", "Closed dynamic network monitor");
+    }
+
+    private synchronized void notifyDefaultInterfaceUpdate(Network targetNetwork) {
+        InterfaceUpdateListener listener = this.defaultInterfaceListener;
+        if (listener == null) return;
+
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (cm == null) return;
+
+        Network current = targetNetwork;
+        if (current == null) {
+            current = findActivePhysicalNetwork(cm);
+        }
+
+        if (current != null) {
+            try {
+                LinkProperties lp = cm.getLinkProperties(current);
+                NetworkCapabilities caps = cm.getNetworkCapabilities(current);
+                if (lp != null && lp.getInterfaceName() != null && caps != null && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                    String ifName = lp.getInterfaceName();
+                    if (!ifName.startsWith("tun") && !ifName.startsWith("null-vpn")) {
+                        java.net.NetworkInterface netIf = java.net.NetworkInterface.getByName(ifName);
+                        if (netIf != null) {
+                            boolean isExpensive = !caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED);
+                            listener.updateDefaultInterface(ifName, netIf.getIndex(), isExpensive, false);
+                            Log.i(TAG, "DefaultInterface updated: " + ifName + " (index=" + netIf.getIndex() + ", expensive=" + isExpensive + ")");
+                            DiagnosticLog.record("DEFAULT_IF_UPDATE", ifName + " (index " + netIf.getIndex() + ", expensive=" + isExpensive + ")");
+                            try {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                                    setUnderlyingNetworks(new Network[]{current});
+                                }
+                            } catch (Throwable ignored) {}
+                            return;
+                        }
+                    }
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "notifyDefaultInterfaceUpdate error: " + t.getMessage());
+            }
+        }
+
+        // If no valid physical network found
+        try {
+            listener.updateDefaultInterface("", -1, false, false);
+            Log.i(TAG, "DefaultInterface updated: none (-1)");
+            DiagnosticLog.record("DEFAULT_IF_UPDATE", "none (-1)");
+        } catch (Throwable ignored) {}
+    }
+
+    private Network findActivePhysicalNetwork(ConnectivityManager cm) {
+        if (cm == null) return null;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                Network active = cm.getActiveNetwork();
+                if (active != null) {
+                    NetworkCapabilities caps = cm.getNetworkCapabilities(active);
+                    if (caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                            && !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) {
+                        return active;
+                    }
+                }
+            }
+
+            Network[] all = cm.getAllNetworks();
+            if (all != null) {
+                Network fallback = null;
+                for (Network n : all) {
+                    NetworkCapabilities caps = cm.getNetworkCapabilities(n);
+                    if (caps == null) continue;
+                    if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
+                    if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                            && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)) {
+                        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                            return n;
+                        }
+                        if (fallback == null) {
+                            fallback = n;
+                        }
+                    }
+                }
+                return fallback;
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "findActivePhysicalNetwork error: " + t.getMessage());
+        }
+        return null;
+    }
 
     public boolean usePlatformInterfaceGetter() {
-        return false;
+        return true;
     }
 
     @Override
     public NetworkInterfaceIterator getInterfaces() throws Exception {
-        return null;
+        List<io.nekohasekai.libbox.NetworkInterface> list = new ArrayList<>();
+        ConnectivityManager cm = (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+        if (cm != null) {
+            try {
+                Network[] allNetworks = cm.getAllNetworks();
+                if (allNetworks != null) {
+                    for (Network network : allNetworks) {
+                        NetworkCapabilities caps = cm.getNetworkCapabilities(network);
+                        if (caps == null) continue;
+                        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue;
+                        if (!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) continue;
+
+                        LinkProperties lp = cm.getLinkProperties(network);
+                        if (lp == null || lp.getInterfaceName() == null) continue;
+
+                        String ifName = lp.getInterfaceName();
+                        if (ifName.startsWith("tun") || ifName.startsWith("null-vpn")) continue;
+
+                        java.net.NetworkInterface netIf = java.net.NetworkInterface.getByName(ifName);
+                        if (netIf == null) continue;
+
+                        io.nekohasekai.libbox.NetworkInterface boxIf = new io.nekohasekai.libbox.NetworkInterface();
+                        boxIf.setName(ifName);
+                        boxIf.setIndex(netIf.getIndex());
+                        try {
+                            boxIf.setMTU(netIf.getMTU());
+                        } catch (Exception ignored) {
+                            boxIf.setMTU(1500);
+                        }
+
+                        int type = Libbox.InterfaceTypeOther;
+                        if (caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
+                            type = Libbox.InterfaceTypeWIFI;
+                        } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) {
+                            type = Libbox.InterfaceTypeCellular;
+                        } else if (caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) {
+                            type = Libbox.InterfaceTypeEthernet;
+                        }
+                        boxIf.setType(type);
+
+                        boxIf.setMetered(!caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED));
+
+                        List<String> addresses = new ArrayList<>();
+                        try {
+                            for (InterfaceAddress ia : netIf.getInterfaceAddresses()) {
+                                if (ia != null && ia.getAddress() != null) {
+                                    String host = ia.getAddress().getHostAddress();
+                                    if (host != null) {
+                                        int pct = host.indexOf('%');
+                                        if (pct != -1) host = host.substring(0, pct);
+                                        addresses.add(host + "/" + ia.getNetworkPrefixLength());
+                                    }
+                                }
+                            }
+                        } catch (Throwable ignored) {}
+                        boxIf.setAddresses(new SimpleStringIterator(addresses));
+
+                        List<String> dnsList = new ArrayList<>();
+                        try {
+                            for (InetAddress dns : lp.getDnsServers()) {
+                                if (dns != null && dns.getHostAddress() != null) {
+                                    dnsList.add(dns.getHostAddress());
+                                }
+                            }
+                        } catch (Throwable ignored) {}
+                        boxIf.setDNSServer(new SimpleStringIterator(dnsList));
+
+                        List<String> gateways = new ArrayList<>();
+                        try {
+                            for (RouteInfo route : lp.getRoutes()) {
+                                if (route != null && (route.isDefaultRoute() || (route.getDestination() != null && route.getDestination().getPrefixLength() == 0)) && route.getGateway() != null) {
+                                    InetAddress gw = route.getGateway();
+                                    if (gw != null && !gw.isAnyLocalAddress() && gw.getHostAddress() != null) {
+                                        gateways.add(gw.getHostAddress());
+                                    }
+                                }
+                            }
+                        } catch (Throwable ignored) {}
+                        boxIf.setGateway(new SimpleStringIterator(gateways));
+
+                        int flags = 0;
+                        if (caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)) {
+                            flags |= (1 << 0); // IFF_UP
+                            flags |= (1 << 6); // IFF_RUNNING
+                        }
+                        try {
+                            if (netIf.isLoopback()) flags |= (1 << 3); // IFF_LOOPBACK
+                            if (netIf.isPointToPoint()) flags |= (1 << 4); // IFF_POINTOPOINT
+                            if (netIf.supportsMulticast()) flags |= (1 << 16); // IFF_MULTICAST
+                        } catch (Throwable ignored) {}
+                        boxIf.setFlags(flags);
+
+                        list.add(boxIf);
+                        Log.d(TAG, "getInterfaces: discovered physical interface " + ifName + " (index=" + netIf.getIndex() + ", type=" + type + ")");
+                    }
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "getInterfaces enumeration error: " + t.getMessage());
+            }
+        }
+
+        // Fallback: If list is empty, scan standard java.net.NetworkInterface
+        if (list.isEmpty()) {
+            try {
+                java.util.Enumeration<java.net.NetworkInterface> en = java.net.NetworkInterface.getNetworkInterfaces();
+                while (en != null && en.hasMoreElements()) {
+                    java.net.NetworkInterface ni = en.nextElement();
+                    if (ni == null) continue;
+                    String name = ni.getName();
+                    if (name == null || name.startsWith("tun") || name.startsWith("null-vpn") || ni.isLoopback() || !ni.isUp()) continue;
+
+                    io.nekohasekai.libbox.NetworkInterface boxIf = new io.nekohasekai.libbox.NetworkInterface();
+                    boxIf.setName(name);
+                    boxIf.setIndex(ni.getIndex());
+                    boxIf.setMTU(ni.getMTU() > 0 ? ni.getMTU() : 1500);
+                    boxIf.setType(name.startsWith("wlan") ? Libbox.InterfaceTypeWIFI : (name.startsWith("rmnet") || name.startsWith("ccmni") ? Libbox.InterfaceTypeCellular : Libbox.InterfaceTypeOther));
+                    boxIf.setMetered(false);
+                    boxIf.setDNSServer(new SimpleStringIterator(Collections.<String>emptyList()));
+                    boxIf.setGateway(new SimpleStringIterator(Collections.<String>emptyList()));
+
+                    List<String> addresses = new ArrayList<>();
+                    for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
+                        if (ia != null && ia.getAddress() != null) {
+                            String host = ia.getAddress().getHostAddress();
+                            if (host != null) {
+                                int pct = host.indexOf('%');
+                                if (pct != -1) host = host.substring(0, pct);
+                                addresses.add(host + "/" + ia.getNetworkPrefixLength());
+                            }
+                        }
+                    }
+                    boxIf.setAddresses(new SimpleStringIterator(addresses));
+                    boxIf.setFlags((1 << 0) | (1 << 6));
+                    list.add(boxIf);
+                    Log.d(TAG, "getInterfaces fallback: added " + name);
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        Log.i(TAG, "getInterfaces returning " + list.size() + " interfaces");
+        DiagnosticLog.record("GET_INTERFACES", "Returning " + list.size() + " physical interface(s)");
+        return new SimpleNetworkInterfaceIterator(list);
+    }
+
+    private static class SimpleStringIterator implements StringIterator {
+        private final Iterator<String> iterator;
+        private final int length;
+
+        public SimpleStringIterator(List<String> list) {
+            this.iterator = (list != null ? list : Collections.<String>emptyList()).iterator();
+            this.length = list != null ? list.size() : 0;
+        }
+
+        @Override
+        public int len() {
+            return length;
+        }
+
+        public int getLen() {
+            return length;
+        }
+
+        @Override
+        public boolean hasNext() {
+            return iterator.hasNext();
+        }
+
+        @Override
+        public String next() {
+            return iterator.next();
+        }
+    }
+
+    private static class SimpleNetworkInterfaceIterator implements NetworkInterfaceIterator {
+        private final Iterator<io.nekohasekai.libbox.NetworkInterface> iterator;
+
+        public SimpleNetworkInterfaceIterator(List<io.nekohasekai.libbox.NetworkInterface> list) {
+            this.iterator = (list != null ? list : Collections.<io.nekohasekai.libbox.NetworkInterface>emptyList()).iterator();
+        }
+
+        @Override
+        public boolean hasNext() {
+            return iterator.hasNext();
+        }
+
+        @Override
+        public io.nekohasekai.libbox.NetworkInterface next() {
+            return iterator.next();
+        }
     }
 
     @Override
